@@ -3,24 +3,45 @@
 
 [input]
 entrypoint = 0x80000400
-rom = "baserom.z64"
-symbols = "symbols/sfrush.us.syms.toml"
+rom_file_path = "baserom.z64"
+symbols_file_path = "symbols/sfrush.us.syms.toml"
+output_func_path = "RecompiledFuncs"
+functions_per_output_file = 50
+single_file_output = false
+uses_mips3_float_mode = true
 
-[output]
-output_path = "RecompiledFuncs"
-functions_per_file = 50
+# Patches section
+[patches]
+# Stubbed functions - cannot be statically recompiled to C:
+#   External calls:
+#     func_800005D8 - main thread, calls DMA-loaded game code (0x800BD440)
+#     func_800162CC - massive OS/hardware function (RSP, TLB, cache, external calls)
+#   CACHE instructions (no-op on PC):
+#     func_80004650, func_800046D0, func_800054B0, func_8000E250
+#   64-bit FPU (trunc.l, cvt.l, dmfc1/dmtc1):
+#     func_80006DC0
+#   COP0 registers (Cause, EPC):
+#     func_8000D8F0 - reads/writes Cause/EPC registers
+#     func_8000E0C4 - writes EPC, TLB operations
+#   TLB operations (virtual memory, not needed on PC):
+#     func_8000E2D0 - TLB probe
+#     func_80015860 - TLB read/write
+stubs = [
+    "func_800005D8",
+    "func_80004650",
+    "func_800046D0",
+    "func_800054B0",
+    "func_80006DC0",
+    "func_8000D8F0",
+    "func_8000E0C4",
+    "func_8000E250",
+    "func_8000E2D0",
+    "func_80015860",
+    "func_800162CC",
+    "func_8000DE84",
+    "func_8000F9C0",
+    "func_80015850",
+]
 
-# ROM identification
-[rom]
-name = "S.F. RUSH"
-game_code = "NSFE"
-crc1 = 0x2A6B1820
-crc2 = 0x6ABCF466
-
-# Stubbed functions - populated as recompilation progresses
-[stubs]
-functions = []
-
-# Ignored functions - populated as problematic functions are identified
-[ignored]
-functions = []
+ignored = []
+renamed = []

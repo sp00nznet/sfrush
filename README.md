@@ -46,25 +46,28 @@ The goal is to leverage what we've already learned from Rampage and DKR rather t
 
 ## Project Status
 
-### Phase 1: Initial Setup (Current)
+### Phase 1: Initial Setup (Complete)
 - [x] Project structure and build system
 - [x] N64Recomp configuration
 - [x] ROM header analysis and validation
-- [x] Symbol extraction - **15,303 functions discovered!**
 - [x] SN64 audio bank scan - candidates at `0x70DB90`, `0x70DB94`, `0x72C87C`
-- [ ] Initial recompilation pass with N64Recomp
 
-### Phase 2: Static Recompilation
-- [ ] Generate recompiled function files
-- [ ] Fix function boundaries and fallthrough issues
-- [ ] Handle cross-function jumps and register persistence
+### Phase 2: Static Recompilation (Current)
+- [x] Boot segment analysis - 319 functions in initial code segment (113KB)
+- [x] Built N64Recomp from source (N64ModernRuntime)
+- [x] **Recompilation successful! 59,839 lines of C across 7 files**
+- [x] Identified 14 stub functions (CACHE, TLB, COP0, external calls)
+- [x] N64ModernRuntime + RT64 submodules integrated
+- [ ] Discover DMA-loaded game code segments (boot code loads main game to ~0x800C0000)
+- [ ] Recompile full game code (beyond boot segment)
 - [ ] Build recompiled functions library
 
 ### Phase 3: Runtime Scaffolding
-- [ ] SDL2 window and input initialization
-- [ ] RT64 rendering context
-- [ ] OS function stubs (libultra)
-- [ ] ROM loading and CRC validation
+- [x] SDL2 window and input initialization (scaffold)
+- [x] RT64 rendering context (scaffold)
+- [x] OS function stubs (Controller Pak, EEPROM, SI, debug)
+- [x] ROM loading and CRC validation
+- [ ] Wire up recompiled boot code to runtime
 
 ### Phase 4: Boot and Render
 - [ ] Game boots to title screen
@@ -132,6 +135,10 @@ sfrush/
 | **GPU** | RT64 | N64 RDP emulation via D3D12/Vulkan |
 | **Audio** | SN64 (TBD) | Midway's proprietary sound engine |
 | **Window** | SDL2 | Cross-platform windowing and input |
+
+## Related Projects
+
+- **[ProjectR](https://t3hd0gg.com/project-r/)** - A separate, unrelated project that ports the *arcade* versions of SF Rush: The Rock and Rush 2049 to PC using Vulkan. Different source material (arcade vs N64) and different approach (reverse engineering vs static recompilation), but cool to see the Rush series getting love from multiple angles.
 
 ## Credits & Acknowledgments
 
