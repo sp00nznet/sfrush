@@ -1,0 +1,26 @@
+# N64Recomp configuration for San Francisco Rush: Extreme Racing (USA)
+# Midway / Atari Games - 1997
+
+[input]
+entrypoint = 0x80000400
+rom = "baserom.z64"
+symbols = "symbols/sfrush.us.syms.toml"
+
+[output]
+output_path = "RecompiledFuncs"
+functions_per_file = 50
+
+# ROM identification
+[rom]
+name = "S.F. RUSH"
+game_code = "NSFE"
+crc1 = 0x2A6B1820
+crc2 = 0x6ABCF466
+
+# Stubbed functions - populated as recompilation progresses
+[stubs]
+functions = []
+
+# Ignored functions - populated as problematic functions are identified
+[ignored]
+functions = []

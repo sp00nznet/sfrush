@@ -1,0 +1,41 @@
+# ROMs - do not distribute
+*.z64
+*.n64
+*.v64
+*.rom
+baserom.*
+
+# Build artifacts
+build/
+out/
+cmake-build-*/
+*.exe
+*.dll
+*.pdb
+*.map
+*.obj
+*.o
+*.a
+*.lib
+*.ilk
+*.exp
+
+# IDE files
+.vs/
+.vscode/
+*.suo
+*.user
+*.sln.docstates
+CMakeSettings.json
+
+# Generated files
+RecompiledFuncs/
+RecompiledPatches/
+
+# OS files
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Claude
+.claude/
