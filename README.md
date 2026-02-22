@@ -20,7 +20,7 @@ This is one of **three N64 static recompilation projects** currently in progress
 |---------|-------|-----------|--------|
 | **[Rampage Recompiled](https://github.com/sp00nznet/Rampage)** | Rampage: World Tour | Midway | Phase 5 - Runtime Integration |
 | **[DKR Recompiled](https://github.com/sp00nznet/diddykongracing)** | Diddy Kong Racing | Rare | Boots, renders, in-game |
-| **This project** | San Francisco Rush | Atari Games / Midway | Phase 1 - Initial Setup |
+| **This project** | San Francisco Rush | Atari Games / Midway | Phase 2 - Recompilation |
 
 San Francisco Rush is another **Midway title**, which means it likely shares engine architecture with Rampage: World Tour, including:
 - **Midway's SN64 sound engine** (proprietary audio format)
@@ -80,6 +80,20 @@ The goal is to leverage what we've already learned from Rampage and DKR rather t
 - [ ] RSP audio microcode HLE/recompilation
 - [ ] Full gameplay loop
 - [ ] Configuration and settings
+
+## What's Next / Outstanding Work
+
+The biggest blocker right now is that the boot segment is only **113KB out of 8MB**. The bulk of the game code is DMA-loaded from ROM at runtime. Here's the priority list:
+
+1. **DMA Table Discovery** - The boot code reads from ROM address `0x00FFB000` in a loop (16 iterations). This is likely a DMA table that tells the game where to load code segments from ROM into RDRAM. Tracing this will unlock the rest of the codebase.
+
+2. **Full Code Recompilation** - Once DMA segments are mapped, run N64Recomp on the full game code. The main game thread starts at `0x800CBE88`, so there's a large code segment loaded to that region.
+
+3. **Build System Integration** - The CMakeLists.txt needs to be wired up to actually compile with N64ModernRuntime, RT64, and the recompiled functions. Currently the scaffolding compiles standalone with SDL2 only.
+
+4. **Runtime Wiring** - Connect the recompiled boot code to ultramodern/librecomp so it can actually execute. This means implementing the OS thread system, message queues, and DMA simulation.
+
+5. **SN64 Audio** - Shared research effort with [Rampage Recompiled](https://github.com/sp00nznet/Rampage). Midway's proprietary sound engine needs reverse engineering. Audio bank candidates identified at ROM offsets `0x70DB90`, `0x70DB94`, `0x72C87C`.
 
 ## Building
 
