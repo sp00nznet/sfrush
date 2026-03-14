@@ -49,8 +49,24 @@ extern void sfrush_set_frequency(uint32_t freq);
 // CRC1: 0x2A6B1820 / CRC2: 0x6ABCF466
 // This hash is for the patched sfrush_recomp.z64 (with decompressed game code)
 // =============================================================================
-// TODO: compute actual hash of sfrush_recomp.z64 and put it here
-constexpr uint64_t SFRUSH_ROM_HASH = 0x0ULL;
+constexpr uint64_t SFRUSH_ROM_HASH = 0xEDDC544BC298CE03ULL;
+
+// =============================================================================
+// Memory layout constants (from ROM analysis)
+// =============================================================================
+// Boot segment: ROM 0x1000 → VRAM 0x80000400, size 0x1B9C8
+// Game code:    ROM 0x5C710 → VRAM 0x8005BB10, size 0x7C550 (decompressed from LZSS)
+// Game BSS:     VRAM 0x800D8060 - 0x8016A9B0 (zeroed)
+// osRomBase:    VRAM 0x80000308 (stores 0x10000000 on real N64)
+// osTvType:     VRAM 0x80000300
+
+constexpr uint32_t GAME_CODE_VRAM  = 0x8005BB10;
+constexpr uint32_t GAME_CODE_ROM   = 0x5C710;
+constexpr uint32_t GAME_CODE_SIZE  = 0x7C550;
+constexpr uint32_t GAME_BSS_START  = 0x800D8060;
+constexpr uint32_t GAME_BSS_END    = 0x8016A9B0;
+constexpr uint32_t BOOT_BSS_START  = 0x8001E2E0;
+constexpr uint32_t BOOT_BSS_SIZE   = 0x38430; // approx to game code start
 
 // =============================================================================
 // Global state
@@ -178,6 +194,65 @@ ultramodern::input::connected_device_info_t get_connected_device_info(int contro
 }
 
 // =============================================================================
+// Game Init Callback
+// Called after RDRAM is allocated but before the entrypoint runs.
+// Loads the decompressed game code data into RDRAM and sets up hardware state.
+// =============================================================================
+
+void on_game_init(uint8_t* rdram, recomp_context* ctx) {
+    fprintf(stderr, "[SFRush] on_game_init: Loading game code data into RDRAM...\n");
+
+    auto rom = recomp::get_rom();
+
+    // Load decompressed game code+data into RDRAM at the correct VRAM address
+    // The patched ROM has the decompressed data at ROM offset GAME_CODE_ROM
+    if (rom.size() >= GAME_CODE_ROM + GAME_CODE_SIZE) {
+        uint32_t rdram_offset = GAME_CODE_VRAM - 0x80000000;
+        memcpy(rdram + rdram_offset, rom.data() + GAME_CODE_ROM, GAME_CODE_SIZE);
+        fprintf(stderr, "[SFRush]   Loaded 0x%X bytes from ROM 0x%X to VRAM 0x%08X\n",
+                GAME_CODE_SIZE, GAME_CODE_ROM, GAME_CODE_VRAM);
+    } else {
+        fprintf(stderr, "[SFRush]   ERROR: ROM too small for game code section!\n");
+    }
+
+    // Zero the BSS regions
+    {
+        uint32_t bss_offset = GAME_BSS_START - 0x80000000;
+        uint32_t bss_size = GAME_BSS_END - GAME_BSS_START;
+        memset(rdram + bss_offset, 0, bss_size);
+        fprintf(stderr, "[SFRush]   Zeroed game BSS: 0x%08X - 0x%08X (%u bytes)\n",
+                GAME_BSS_START, GAME_BSS_END, bss_size);
+    }
+
+    // Initialize osRomBase (0x80000308) = 0x10000000 (PI bus ROM base)
+    // This is normally set by the IPL boot code
+    {
+        uint32_t* rom_base = (uint32_t*)(rdram + (0x80000308 - 0x80000000));
+        *rom_base = 0x10000000;  // Big-endian: needs byte swap on LE
+        // Actually recomp uses big-endian RDRAM access, so just store directly
+        // MEM_W macro does: *(int32_t*)(rdram + (addr - 0x80000000))
+        // This stores in native endian. But the game reads via MEM_W too, so it's consistent.
+        fprintf(stderr, "[SFRush]   Set osRomBase at 0x80000308 = 0x10000000\n");
+    }
+
+    // Initialize osTvType (0x80000300) = 1 (NTSC)
+    {
+        uint32_t* tv_type = (uint32_t*)(rdram + (0x80000300 - 0x80000000));
+        *tv_type = 1;
+        fprintf(stderr, "[SFRush]   Set osTvType at 0x80000300 = 1 (NTSC)\n");
+    }
+
+    // Initialize osMemSize (0x80000318) = 0x800000 (8 MB)
+    {
+        uint32_t* mem_size = (uint32_t*)(rdram + (0x80000318 - 0x80000000));
+        *mem_size = 0x800000;
+        fprintf(stderr, "[SFRush]   Set osMemSize at 0x80000318 = 0x800000 (8 MB)\n");
+    }
+
+    fprintf(stderr, "[SFRush] on_game_init complete.\n");
+}
+
+// =============================================================================
 // Event Callbacks
 // =============================================================================
 
@@ -287,6 +362,7 @@ int main(int argc, char* argv[]) {
     game_entry.is_enabled = true;
     game_entry.entrypoint_address = (gpr)(int32_t)0x80000400;
     game_entry.entrypoint = recomp_entrypoint;
+    game_entry.on_init_callback = on_game_init;
 
     // Register sections
     recomp::overlays::overlay_section_table_data_t sections_data{};
