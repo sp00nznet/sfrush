@@ -28,7 +28,6 @@ uses_mips3_float_mode = true
 #     func_80015860 - TLB read/write
 stubs = [
     # Boot segment stubs
-    "func_800005D8",
     "func_80004650",
     "func_800046D0",
     "func_800054B0",
@@ -46,5 +45,10 @@ stubs = [
     "func_800C38A0",
 ]
 
-ignored = []
+ignored = [
+    # func_800005D8: custom implementation in game_init_stubs.cpp
+    # Original does LZSS decompress + game init; we skip the decompress
+    # (handled by on_game_init callback) and call func_800BD440 directly
+    "func_800005D8",
+]
 renamed = []

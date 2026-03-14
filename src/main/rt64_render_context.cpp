@@ -136,12 +136,13 @@ public:
     void enable_instant_present() override {}
 
     void send_dl(const OSTask* task) override {
-        if (!app_ || !is_valid_) return;
+        if (!app_ || !is_valid_ || !task) return;
 
         dl_count_++;
         uint32_t dl_address = task->t.data_ptr & 0x1FFFFFFF;
-        if (dl_count_ <= 5 || (dl_count_ % 60 == 0)) {
-            fprintf(stderr, "[SFRush] Display list #%u at 0x%08X\n", dl_count_, dl_address);
+        if (dl_count_ <= 10 || (dl_count_ % 60 == 0)) {
+            fprintf(stderr, "[SFRush] Display list #%u at 0x%08X (type=%d)\n",
+                    dl_count_, dl_address, task->t.type);
         }
         app_->processDisplayLists(rdram_, dl_address, 0, true);
     }
@@ -149,9 +150,15 @@ public:
     void update_screen() override {
         if (!app_ || !is_valid_) return;
 
+        // Skip if VI hasn't been configured yet (race with game thread init)
+        if (vi_regs_ && vi_regs_->VI_ORIGIN_REG == 0) {
+            return;
+        }
+
         screen_count_++;
         if (screen_count_ <= 5 || (screen_count_ % 60 == 0)) {
-            fprintf(stderr, "[SFRush] update_screen #%u\n", screen_count_);
+            fprintf(stderr, "[SFRush] update_screen #%u (VI_ORIGIN=0x%08X)\n",
+                    screen_count_, vi_regs_ ? vi_regs_->VI_ORIGIN_REG : 0);
         }
         app_->updateScreen();
     }
