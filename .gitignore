@@ -7,6 +7,7 @@ baserom.*
 
 # Build artifacts
 build/
+build_n64recomp/
 out/
 cmake-build-*/
 *.exe
@@ -31,6 +32,14 @@ CMakeSettings.json
 # Generated files
 RecompiledFuncs/
 RecompiledPatches/
+game_code_decompressed.bin
+
+# Mupen debug dumps
+tools/m64p_debug/Release/
+tools/m64p_debug/dumps/
+
+# Backup files
+*.bak
 
 # OS files
 Thumbs.db

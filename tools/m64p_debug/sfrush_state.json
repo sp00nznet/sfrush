@@ -1,0 +1,17 @@
+{
+    "rom": "D:\\sfrush\\baserom.z64",
+    "emumode": 1,
+    "state_reads": [
+        { "name": "osMemSize",        "addr": "80000318", "size": 4 },
+        { "name": "bootproc_start",   "addr": "80000450", "size": 4 },
+        { "name": "dma_code_0x0",     "addr": "800C0000", "size": 4 },
+        { "name": "dma_code_0x4",     "addr": "800C0004", "size": 4 },
+        { "name": "thread_entry",     "addr": "800CBE88", "size": 4 },
+        { "name": "thread_entry+4",   "addr": "800CBE8C", "size": 4 },
+        { "name": "dma_code_0xF000",  "addr": "800CF000", "size": 4 },
+        { "name": "dma_code_0x10000", "addr": "800D0000", "size": 4 },
+        { "name": "dma_code_0x20000", "addr": "800E0000", "size": 4 },
+        { "name": "dma_code_0x40000", "addr": "80100000", "size": 4 }
+    ],
+    "labels": {}
+}

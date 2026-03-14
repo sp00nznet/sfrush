@@ -20,7 +20,7 @@ This is one of **three N64 static recompilation projects** currently in progress
 |---------|-------|-----------|--------|
 | **[Rampage Recompiled](https://github.com/sp00nznet/Rampage)** | Rampage: World Tour | Midway | Phase 5 - Runtime Integration |
 | **[DKR Recompiled](https://github.com/sp00nznet/diddykongracing)** | Diddy Kong Racing | Rare | Boots, renders, in-game |
-| **This project** | San Francisco Rush | Atari Games / Midway | Phase 2 - Recompilation |
+| **This project** | San Francisco Rush | Atari Games / Midway | Phase 3 - Build System |
 
 San Francisco Rush is another **Midway title**, which means it likely shares engine architecture with Rampage: World Tour, including:
 - **Midway's SN64 sound engine** (proprietary audio format)
@@ -52,22 +52,26 @@ The goal is to leverage what we've already learned from Rampage and DKR rather t
 - [x] ROM header analysis and validation
 - [x] SN64 audio bank scan - candidates at `0x70DB90`, `0x70DB94`, `0x72C87C`
 
-### Phase 2: Static Recompilation (Current)
+### Phase 2: Static Recompilation (Complete)
 - [x] Boot segment analysis - 319 functions in initial code segment (113KB)
 - [x] Built N64Recomp from source (N64ModernRuntime)
-- [x] **Recompilation successful! 59,839 lines of C across 7 files**
+- [x] Boot segment recompilation - 59,839 lines of C across 7 files
 - [x] Identified 14 stub functions (CACHE, TLB, COP0, external calls)
 - [x] N64ModernRuntime + RT64 submodules integrated
-- [ ] Discover DMA-loaded game code segments (boot code loads main game to ~0x800C0000)
-- [ ] Recompile full game code (beyond boot segment)
-- [ ] Build recompiled functions library
+- [x] **Discovered LZSS-compressed game code** at ROM 0x7A7930 (328KB → 497KB decompressed)
+- [x] Wrote LZSS decompressor matching the original `func_80003B18` algorithm
+- [x] Built patched ROM with decompressed code at correct VRAM mapping
+- [x] **Full recompilation: 1,014 functions, 356,001 lines of C, zero errors**
+- [x] 15 functions stubbed (CACHE, TLB, COP0, FPU, 1 invalid instruction)
 
-### Phase 3: Runtime Scaffolding
+### Phase 3: Build System & Runtime (Current)
 - [x] SDL2 window and input initialization (scaffold)
 - [x] RT64 rendering context (scaffold)
 - [x] OS function stubs (Controller Pak, EEPROM, SI, debug)
 - [x] ROM loading and CRC validation
-- [ ] Wire up recompiled boot code to runtime
+- [ ] Wire CMakeLists.txt to compile with N64ModernRuntime/RT64
+- [ ] Create section_table.cpp, main.cpp runtime entry
+- [ ] Connect recompiled code to ultramodern/librecomp
 
 ### Phase 4: Boot and Render
 - [ ] Game boots to title screen
@@ -83,17 +87,30 @@ The goal is to leverage what we've already learned from Rampage and DKR rather t
 
 ## What's Next / Outstanding Work
 
-The biggest blocker right now is that the boot segment is only **113KB out of 8MB**. The bulk of the game code is DMA-loaded from ROM at runtime. Here's the priority list:
+The full codebase is now recompiled — **1,014 functions** from both the boot segment and the LZSS-compressed main game code. The priority list:
 
-1. **DMA Table Discovery** - The boot code reads from ROM address `0x00FFB000` in a loop (16 iterations). This is likely a DMA table that tells the game where to load code segments from ROM into RDRAM. Tracing this will unlock the rest of the codebase.
+1. **Build System Integration** - Wire CMakeLists.txt to compile the recompiled functions with N64ModernRuntime, RT64, and SDL2. Use the Extreme-G and Racer projects as templates.
 
-2. **Full Code Recompilation** - Once DMA segments are mapped, run N64Recomp on the full game code. The main game thread starts at `0x800CBE88`, so there's a large code segment loaded to that region.
+2. **Runtime Wiring** - Create main.cpp, section_table.cpp, and OS stubs to connect recompiled code to ultramodern/librecomp. Implement thread system, message queues, and PI DMA simulation.
 
-3. **Build System Integration** - The CMakeLists.txt needs to be wired up to actually compile with N64ModernRuntime, RT64, and the recompiled functions. Currently the scaffolding compiles standalone with SDL2 only.
+3. **Boot to Title Screen** - Get the game booting with RT64 rendering the first frames.
 
-4. **Runtime Wiring** - Connect the recompiled boot code to ultramodern/librecomp so it can actually execute. This means implementing the OS thread system, message queues, and DMA simulation.
+4. **SN64 Audio** - Shared research effort with [Rampage Recompiled](https://github.com/sp00nznet/Rampage). Midway's proprietary sound engine needs reverse engineering. Audio bank candidates identified at ROM offsets `0x70DB90`, `0x70DB94`, `0x72C87C`.
 
-5. **SN64 Audio** - Shared research effort with [Rampage Recompiled](https://github.com/sp00nznet/Rampage). Midway's proprietary sound engine needs reverse engineering. Audio bank candidates identified at ROM offsets `0x70DB90`, `0x70DB94`, `0x72C87C`.
+## Technical Details
+
+### Game Code Discovery
+
+The game uses **LZSS compression** — the main game code is stored compressed at the end of the ROM and decompressed into RDRAM at boot:
+
+| Region | VRAM | Size | Source |
+|--------|------|------|--------|
+| Boot code | `0x80000400-0x8001BDC8` | 113 KB | ROM 0x1000 (IPL load) |
+| Boot BSS | `0x8001E2E0-0x8005BB10` | 252 KB | Zeroed |
+| **Game code** | **`0x8005BB10-0x800D8060`** | **497 KB** | **ROM 0x7A7930 (LZSS)** |
+| Game BSS | `0x800D8060-0x8016A9B0` | 586 KB | Zeroed |
+
+The boot function `func_80003B18` implements the LZSS decompressor with a 4KB sliding window. A patched ROM (`sfrush_recomp.z64`) is generated with the decompressed code placed at the correct linear offset for N64Recomp to process.
 
 ## Building
 

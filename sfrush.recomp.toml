@@ -3,7 +3,7 @@
 
 [input]
 entrypoint = 0x80000400
-rom_file_path = "baserom.z64"
+rom_file_path = "sfrush_recomp.z64"
 symbols_file_path = "symbols/sfrush.us.syms.toml"
 output_func_path = "RecompiledFuncs"
 functions_per_output_file = 50
@@ -14,7 +14,7 @@ uses_mips3_float_mode = true
 [patches]
 # Stubbed functions - cannot be statically recompiled to C:
 #   External calls:
-#     func_800005D8 - main thread, calls DMA-loaded game code (0x800BD440)
+#     func_800005D8 - main thread, decompresses+loads game code, calls 0x800BD440
 #     func_800162CC - massive OS/hardware function (RSP, TLB, cache, external calls)
 #   CACHE instructions (no-op on PC):
 #     func_80004650, func_800046D0, func_800054B0, func_8000E250
@@ -27,6 +27,7 @@ uses_mips3_float_mode = true
 #     func_8000E2D0 - TLB probe
 #     func_80015860 - TLB read/write
 stubs = [
+    # Boot segment stubs
     "func_800005D8",
     "func_80004650",
     "func_800046D0",
@@ -41,6 +42,8 @@ stubs = [
     "func_8000DE84",
     "func_8000F9C0",
     "func_80015850",
+    # Game code stubs (invalid instruction)
+    "func_800C38A0",
 ]
 
 ignored = []
