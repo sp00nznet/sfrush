@@ -1,258 +1,387 @@
-/**
- * San Francisco Rush: Extreme Racing - Recompiled
- * Main entry point - SDL window, input handling, and game lifecycle
- *
- * Based on patterns from:
- *   - Rampage Recompiled (Midway, shared engine conventions)
- *   - DKR Recompiled (N64Recomp runtime patterns)
- */
+// San Francisco Rush: Extreme Racing — N64 Static Recompilation
+// Main entry point
+// Based on Extreme-G's proven runtime integration pattern
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <string>
 #include <filesystem>
+#include <memory>
+#include <string>
+
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <dbghelp.h>
 
 #include <SDL.h>
+#include <SDL_syswm.h>
 
-// Version
-#ifndef SFRUSH_VERSION_MAJOR
-#define SFRUSH_VERSION_MAJOR 0
-#endif
-#ifndef SFRUSH_VERSION_MINOR
-#define SFRUSH_VERSION_MINOR 1
-#endif
-#ifndef SFRUSH_VERSION_PATCH
-#define SFRUSH_VERSION_PATCH 0
-#endif
+#include "recomp.h"
+#include "librecomp/game.hpp"
+#include "librecomp/overlays.hpp"
+#include "librecomp/rsp.hpp"
+#include "ultramodern/ultramodern.hpp"
+#include "ultramodern/renderer_context.hpp"
+#include "ultramodern/error_handling.hpp"
+#include "ultramodern/events.hpp"
+#include "ultramodern/input.hpp"
+#include "ultramodern/threads.hpp"
 
-static const char* VERSION_STRING = "0.1.0";
+// =============================================================================
+// External declarations
+// =============================================================================
 
-// ROM validation
-static const uint32_t EXPECTED_CRC1 = 0x2A6B1820;
-static const uint32_t EXPECTED_CRC2 = 0x6ABCF466;
-static const uint32_t ROM_SIZE = 8 * 1024 * 1024; // 8 MB
-static const char* ROM_FILENAME = "baserom.z64";
+extern SectionTableEntry section_table[];
+extern const size_t num_sections_export;
+#define num_sections num_sections_export
 
-// Window configuration
-static const int WINDOW_WIDTH = 320;
-static const int WINDOW_HEIGHT = 240;
-static const int WINDOW_SCALE = 3;
-static const char* WINDOW_TITLE = "San Francisco Rush: Extreme Racing - Recompiled";
+extern std::unique_ptr<ultramodern::renderer::RendererContext> create_sfrush_render_context(
+    uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle, bool developer_mode);
 
+extern "C" void recomp_entrypoint(uint8_t* rdram, recomp_context* ctx);
+
+extern void sfrush_queue_samples(int16_t* samples, size_t num_samples);
+extern size_t sfrush_get_frames_remaining();
+extern void sfrush_set_frequency(uint32_t freq);
+
+// =============================================================================
+// ROM Hash — SF Rush: Extreme Racing (USA)
+// CRC1: 0x2A6B1820 / CRC2: 0x6ABCF466
+// This hash is for the patched sfrush_recomp.z64 (with decompressed game code)
+// =============================================================================
+// TODO: compute actual hash of sfrush_recomp.z64 and put it here
+constexpr uint64_t SFRUSH_ROM_HASH = 0x0ULL;
+
+// =============================================================================
+// Global state
+// =============================================================================
 static SDL_Window* g_window = nullptr;
-static SDL_Renderer* g_renderer = nullptr;
-static bool g_running = true;
 
-// ROM data
-static uint8_t* g_rom_data = nullptr;
-static uint32_t g_rom_size = 0;
+// =============================================================================
+// RSP Callbacks
+// =============================================================================
 
-SDL_Window* get_sdl_window() {
-    return g_window;
+RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
+    return nullptr;
 }
 
-/**
- * Read a big-endian 32-bit value from a byte buffer.
- */
-static uint32_t read_be32(const uint8_t* data) {
-    return ((uint32_t)data[0] << 24) |
-           ((uint32_t)data[1] << 16) |
-           ((uint32_t)data[2] <<  8) |
-           ((uint32_t)data[3]);
+// =============================================================================
+// Renderer Callbacks
+// =============================================================================
+
+std::unique_ptr<ultramodern::renderer::RendererContext> create_render_context_callback(
+    uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle, bool developer_mode) {
+    return create_sfrush_render_context(rdram, window_handle, developer_mode);
 }
 
-/**
- * Load and validate the ROM file.
- * Returns true on success.
- */
-static bool load_rom(const char* path) {
-    FILE* f = fopen(path, "rb");
-    if (!f) {
-        fprintf(stderr, "[ROM] Failed to open: %s\n", path);
-        return false;
+// =============================================================================
+// GFX Callbacks (window management)
+// =============================================================================
+
+ultramodern::gfx_callbacks_t::gfx_data_t create_gfx() {
+    SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
+    SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, "0");
+
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_AUDIO) < 0) {
+        fprintf(stderr, "[SFRush] Failed to initialize SDL2: %s\n", SDL_GetError());
+        std::exit(1);
     }
 
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    if (size != ROM_SIZE) {
-        fprintf(stderr, "[ROM] Unexpected size: %ld bytes (expected %u)\n", size, ROM_SIZE);
-        fclose(f);
-        return false;
-    }
-
-    g_rom_data = (uint8_t*)malloc(size);
-    if (!g_rom_data) {
-        fprintf(stderr, "[ROM] Failed to allocate %ld bytes\n", size);
-        fclose(f);
-        return false;
-    }
-
-    if (fread(g_rom_data, 1, size, f) != (size_t)size) {
-        fprintf(stderr, "[ROM] Failed to read ROM data\n");
-        free(g_rom_data);
-        g_rom_data = nullptr;
-        fclose(f);
-        return false;
-    }
-
-    fclose(f);
-    g_rom_size = (uint32_t)size;
-
-    // Validate ROM header
-    uint32_t magic = read_be32(g_rom_data);
-    if (magic != 0x80371240) {
-        fprintf(stderr, "[ROM] Invalid magic: 0x%08X (expected 0x80371240 for .z64 format)\n", magic);
-        free(g_rom_data);
-        g_rom_data = nullptr;
-        return false;
-    }
-
-    // Validate CRC
-    uint32_t crc1 = read_be32(g_rom_data + 0x10);
-    uint32_t crc2 = read_be32(g_rom_data + 0x14);
-
-    if (crc1 != EXPECTED_CRC1 || crc2 != EXPECTED_CRC2) {
-        fprintf(stderr, "[ROM] CRC mismatch: got %08X/%08X, expected %08X/%08X\n",
-                crc1, crc2, EXPECTED_CRC1, EXPECTED_CRC2);
-        fprintf(stderr, "[ROM] This may be the wrong ROM version. Expected: USA v1.0\n");
-        free(g_rom_data);
-        g_rom_data = nullptr;
-        return false;
-    }
-
-    // Print ROM info
-    char title[21] = {0};
-    memcpy(title, g_rom_data + 0x20, 20);
-    char code[5] = {0};
-    memcpy(code, g_rom_data + 0x3B, 4);
-
-    fprintf(stderr, "[ROM] Loaded: \"%s\" (%s)\n", title, code);
-    fprintf(stderr, "[ROM] CRC: %08X / %08X (verified)\n", crc1, crc2);
-    fprintf(stderr, "[ROM] Size: %u bytes\n", g_rom_size);
-
-    return true;
+    fprintf(stderr, "[SFRush] SDL initialized: %s\n", SDL_GetCurrentVideoDriver());
+    return nullptr;
 }
 
-/**
- * Process SDL input events.
- */
-static void process_input() {
+ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::gfx_data_t) {
+    g_window = SDL_CreateWindow(
+        "San Francisco Rush: Extreme Racing - Recompiled",
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        1280, 960,
+        SDL_WINDOW_RESIZABLE
+    );
+
+    if (!g_window) {
+        fprintf(stderr, "[SFRush] Failed to create window: %s\n", SDL_GetError());
+        std::exit(1);
+    }
+
+    fprintf(stderr, "[SFRush] Window created (1280x960)\n");
+
+    SDL_SysWMinfo wminfo;
+    SDL_VERSION(&wminfo.version);
+    SDL_GetWindowWMInfo(g_window, &wminfo);
+
+    ultramodern::renderer::WindowHandle handle{};
+    handle.window = wminfo.info.win.window;
+    handle.thread_id = GetCurrentThreadId();
+    return handle;
+}
+
+void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
             case SDL_QUIT:
-                g_running = false;
+                ultramodern::quit();
                 break;
-
             case SDL_KEYDOWN:
                 if (event.key.keysym.sym == SDLK_ESCAPE) {
-                    g_running = false;
+                    ultramodern::quit();
                 }
                 break;
         }
     }
 }
 
-/**
- * Main entry point.
- */
+// =============================================================================
+// Input Callbacks
+// =============================================================================
+
+void poll_input() {
+}
+
+bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
+    if (controller_num != 0) return false;
+
+    *buttons = 0;
+    *x = 0.0f;
+    *y = 0.0f;
+
+    const uint8_t* keys = SDL_GetKeyboardState(nullptr);
+
+    // N64 button mapping
+    if (keys[SDL_SCANCODE_RETURN]) *buttons |= 0x8000; // A
+    if (keys[SDL_SCANCODE_LSHIFT]) *buttons |= 0x4000; // B
+    if (keys[SDL_SCANCODE_Z])      *buttons |= 0x2000; // Z (gas in Rush)
+    if (keys[SDL_SCANCODE_SPACE])  *buttons |= 0x1000; // Start
+    if (keys[SDL_SCANCODE_UP])     *buttons |= 0x0800; // D-Up
+    if (keys[SDL_SCANCODE_DOWN])   *buttons |= 0x0400; // D-Down
+    if (keys[SDL_SCANCODE_LEFT])   *buttons |= 0x0200; // D-Left
+    if (keys[SDL_SCANCODE_RIGHT])  *buttons |= 0x0100; // D-Right
+
+    // Analog stick
+    if (keys[SDL_SCANCODE_W]) *y += 1.0f;
+    if (keys[SDL_SCANCODE_S]) *y -= 1.0f;
+    if (keys[SDL_SCANCODE_A]) *x -= 1.0f;
+    if (keys[SDL_SCANCODE_D]) *x += 1.0f;
+
+    return true;
+}
+
+void set_rumble(int controller_num, bool rumble) {
+}
+
+ultramodern::input::connected_device_info_t get_connected_device_info(int controller_num) {
+    if (controller_num == 0) {
+        return { ultramodern::input::Device::Controller, ultramodern::input::Pak::None };
+    }
+    return { ultramodern::input::Device::None, ultramodern::input::Pak::None };
+}
+
+// =============================================================================
+// Event Callbacks
+// =============================================================================
+
+void vi_callback() {
+}
+
+void gfx_init_callback() {
+    fprintf(stderr, "[SFRush] Graphics initialized, starting game...\n");
+    std::u8string game_id = u8"sfrush";
+    recomp::start_game(game_id);
+    fprintf(stderr, "[SFRush] Game started\n");
+}
+
+// =============================================================================
+// Error Handling
+// =============================================================================
+
+void error_message_box(const char* msg) {
+    fprintf(stderr, "[SFRush ERROR] %s\n", msg);
+    if (g_window) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "SF Rush Error", msg, g_window);
+    }
+}
+
+// =============================================================================
+// Thread Naming
+// =============================================================================
+
+std::string get_game_thread_name(const OSThread* t) {
+    return "SFRush-Thread";
+}
+
+// =============================================================================
+// Crash Handler (Windows SEH with stack trace)
+// =============================================================================
+
+static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
+    fprintf(stderr, "\n[CRASH] Exception 0x%08lX at address 0x%p\n",
+            ep->ExceptionRecord->ExceptionCode,
+            ep->ExceptionRecord->ExceptionAddress);
+    if (ep->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
+        fprintf(stderr, "[CRASH] Access violation %s address 0x%p\n",
+                ep->ExceptionRecord->ExceptionInformation[0] ? "writing" : "reading",
+                (void*)ep->ExceptionRecord->ExceptionInformation[1]);
+    }
+    HMODULE hMod = NULL;
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                       (LPCSTR)ep->ExceptionRecord->ExceptionAddress, &hMod);
+    if (hMod) {
+        char modName[MAX_PATH];
+        GetModuleFileNameA(hMod, modName, MAX_PATH);
+        uintptr_t offset = (uintptr_t)ep->ExceptionRecord->ExceptionAddress - (uintptr_t)hMod;
+        fprintf(stderr, "[CRASH] Module: %s + 0x%llX\n", modName, (unsigned long long)offset);
+    }
+    SymInitialize(GetCurrentProcess(), NULL, TRUE);
+    STACKFRAME64 frame = {};
+    CONTEXT ctx = *ep->ContextRecord;
+    frame.AddrPC.Offset = ctx.Rip;
+    frame.AddrPC.Mode = AddrModeFlat;
+    frame.AddrStack.Offset = ctx.Rsp;
+    frame.AddrStack.Mode = AddrModeFlat;
+    frame.AddrFrame.Offset = ctx.Rbp;
+    frame.AddrFrame.Mode = AddrModeFlat;
+    fprintf(stderr, "[CRASH] Stack trace:\n");
+    for (int i = 0; i < 20; i++) {
+        if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, GetCurrentProcess(),
+                         GetCurrentThread(), &frame, &ctx, NULL,
+                         SymFunctionTableAccess64, SymGetModuleBase64, NULL))
+            break;
+        char buf[sizeof(SYMBOL_INFO) + 256];
+        SYMBOL_INFO* sym = (SYMBOL_INFO*)buf;
+        sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+        sym->MaxNameLen = 255;
+        DWORD64 disp = 0;
+        if (SymFromAddr(GetCurrentProcess(), frame.AddrPC.Offset, &disp, sym)) {
+            fprintf(stderr, "  [%d] %s + 0x%llX\n", i, sym->Name, (unsigned long long)disp);
+        } else {
+            fprintf(stderr, "  [%d] 0x%llX\n", i, (unsigned long long)frame.AddrPC.Offset);
+        }
+    }
+    fflush(stderr);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
+// =============================================================================
+// Main
+// =============================================================================
+
 int main(int argc, char* argv[]) {
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    setvbuf(stderr, nullptr, _IONBF, 0);
+    SetUnhandledExceptionFilter(crash_handler);
+
     fprintf(stderr, "==============================================\n");
     fprintf(stderr, " San Francisco Rush: Extreme Racing\n");
-    fprintf(stderr, " Static Recompilation v%s\n", VERSION_STRING);
-    fprintf(stderr, " Fan-made / Unofficial - Not affiliated with\n");
-    fprintf(stderr, " Atari Games, Midway, or any rights holders\n");
+    fprintf(stderr, " Static Recompilation v0.2.0\n");
+    fprintf(stderr, " Fan-made / Unofficial\n");
     fprintf(stderr, "==============================================\n\n");
 
-    // Find and load ROM
-    const char* rom_path = ROM_FILENAME;
-    if (argc > 1) {
-        rom_path = argv[1];
+    // Register game entry
+    recomp::GameEntry game_entry{};
+    game_entry.rom_hash = SFRUSH_ROM_HASH;
+    game_entry.internal_name = "S.F. RUSH";
+    game_entry.game_id = u8"sfrush";
+    game_entry.mod_game_id = "sfrush";
+    game_entry.save_type = recomp::SaveType::Eep4k;
+    game_entry.is_enabled = true;
+    game_entry.entrypoint_address = (gpr)(int32_t)0x80000400;
+    game_entry.entrypoint = recomp_entrypoint;
+
+    // Register sections
+    recomp::overlays::overlay_section_table_data_t sections_data{};
+    sections_data.code_sections = section_table;
+    sections_data.num_code_sections = num_sections;
+    sections_data.total_num_sections = num_sections;
+
+    recomp::overlays::overlays_by_index_t overlays_data{};
+    overlays_data.table = nullptr;
+    overlays_data.len = 0;
+
+    recomp::overlays::register_overlays(sections_data, overlays_data);
+
+    if (!recomp::register_game(game_entry)) {
+        fprintf(stderr, "[SFRush] Failed to register game!\n");
+        return 1;
     }
 
-    // Try default filename, then scan for .z64 files
-    if (!load_rom(rom_path)) {
-        if (rom_path == ROM_FILENAME) {
-            fprintf(stderr, "[ROM] Scanning for .z64 files...\n");
-            for (const auto& entry : std::filesystem::directory_iterator(".")) {
-                if (entry.path().extension() == ".z64") {
-                    fprintf(stderr, "[ROM] Trying: %s\n", entry.path().string().c_str());
-                    if (load_rom(entry.path().string().c_str())) {
-                        break;
-                    }
-                }
-            }
-        }
+    fprintf(stderr, "[SFRush] Game registered: %zu sections, %zu + %zu functions\n",
+           num_sections, section_table[0].num_funcs,
+           num_sections > 1 ? section_table[1].num_funcs : 0);
 
-        if (!g_rom_data) {
-            fprintf(stderr, "[ROM] No valid ROM found. Place your ROM as '%s' in the working directory.\n", ROM_FILENAME);
+    recomp::register_config_path(std::filesystem::current_path());
+
+    // Load ROM
+    recomp::check_all_stored_roms();
+    std::u8string game_id_check = u8"sfrush";
+    if (!recomp::is_rom_valid(game_id_check)) {
+        fprintf(stderr, "[SFRush] No stored ROM found, loading sfrush_recomp.z64...\n");
+        auto rom_error = recomp::select_rom("sfrush_recomp.z64", game_id_check);
+        if (rom_error != recomp::RomValidationError::Good) {
+            fprintf(stderr, "[SFRush] ROM validation failed (error %d)!\n", (int)rom_error);
+            fprintf(stderr, "  Place sfrush_recomp.z64 in the working directory.\n");
+            fprintf(stderr, "  Generate it with: node tools/build_recomp_rom.js\n");
             return 1;
         }
+        fprintf(stderr, "[SFRush] ROM validated and stored.\n");
+    } else {
+        fprintf(stderr, "[SFRush] Stored ROM found.\n");
     }
 
-    // Initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) < 0) {
-        fprintf(stderr, "[SDL] Init failed: %s\n", SDL_GetError());
-        return 1;
-    }
+    // Configure runtime
+    recomp::Configuration cfg{};
+    cfg.project_version = { 0, 2, 0, "-alpha" };
 
-    g_window = SDL_CreateWindow(
-        WINDOW_TITLE,
-        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        WINDOW_WIDTH * WINDOW_SCALE, WINDOW_HEIGHT * WINDOW_SCALE,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
-    );
+    recomp::rsp::callbacks_t rsp_callbacks{};
+    rsp_callbacks.get_rsp_microcode = get_rsp_microcode;
+    cfg.rsp_callbacks = rsp_callbacks;
 
-    if (!g_window) {
-        fprintf(stderr, "[SDL] Window creation failed: %s\n", SDL_GetError());
-        SDL_Quit();
-        return 1;
-    }
+    ultramodern::renderer::callbacks_t renderer_callbacks{};
+    renderer_callbacks.create_render_context = create_render_context_callback;
+    cfg.renderer_callbacks = renderer_callbacks;
 
-    g_renderer = SDL_CreateRenderer(g_window, -1,
-        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    ultramodern::audio_callbacks_t audio_callbacks{};
+    audio_callbacks.queue_samples = sfrush_queue_samples;
+    audio_callbacks.get_frames_remaining = sfrush_get_frames_remaining;
+    audio_callbacks.set_frequency = sfrush_set_frequency;
+    cfg.audio_callbacks = audio_callbacks;
 
-    if (!g_renderer) {
-        fprintf(stderr, "[SDL] Renderer creation failed: %s\n", SDL_GetError());
-        SDL_DestroyWindow(g_window);
-        SDL_Quit();
-        return 1;
-    }
+    ultramodern::input::callbacks_t input_callbacks{};
+    input_callbacks.poll_input = poll_input;
+    input_callbacks.get_input = get_input;
+    input_callbacks.set_rumble = set_rumble;
+    input_callbacks.get_connected_device_info = get_connected_device_info;
+    cfg.input_callbacks = input_callbacks;
 
-    fprintf(stderr, "[INIT] SDL initialized successfully\n");
-    fprintf(stderr, "[INIT] Window: %dx%d (scale %dx)\n",
-            WINDOW_WIDTH * WINDOW_SCALE, WINDOW_HEIGHT * WINDOW_SCALE, WINDOW_SCALE);
+    ultramodern::gfx_callbacks_t gfx_callbacks{};
+    gfx_callbacks.create_gfx = create_gfx;
+    gfx_callbacks.create_window = create_window;
+    gfx_callbacks.update_gfx = update_gfx;
+    cfg.gfx_callbacks = gfx_callbacks;
 
-    // Main loop placeholder - will be replaced with recompiled game loop
-    fprintf(stderr, "[INIT] Entering main loop (scaffold mode)\n");
-    fprintf(stderr, "[INIT] Press ESC to quit\n");
+    ultramodern::events::callbacks_t events_callbacks{};
+    events_callbacks.vi_callback = vi_callback;
+    events_callbacks.gfx_init_callback = gfx_init_callback;
+    cfg.events_callbacks = events_callbacks;
 
-    while (g_running) {
-        process_input();
+    ultramodern::error_handling::callbacks_t error_callbacks{};
+    error_callbacks.message_box = error_message_box;
+    cfg.error_handling_callbacks = error_callbacks;
 
-        // Clear screen with a dark blue (Rush vibes)
-        SDL_SetRenderDrawColor(g_renderer, 10, 10, 40, 255);
-        SDL_RenderClear(g_renderer);
-        SDL_RenderPresent(g_renderer);
+    ultramodern::threads::callbacks_t threads_callbacks{};
+    threads_callbacks.get_game_thread_name = get_game_thread_name;
+    cfg.threads_callbacks = threads_callbacks;
 
-        SDL_Delay(16); // ~60fps
-    }
+    fprintf(stderr, "[SFRush] Starting runtime...\n");
+
+    recomp::start(cfg);
 
     // Cleanup
-    fprintf(stderr, "[SHUTDOWN] Cleaning up...\n");
-
-    if (g_rom_data) {
-        free(g_rom_data);
-        g_rom_data = nullptr;
+    if (g_window) {
+        SDL_DestroyWindow(g_window);
     }
-
-    SDL_DestroyRenderer(g_renderer);
-    SDL_DestroyWindow(g_window);
     SDL_Quit();
 
-    fprintf(stderr, "[SHUTDOWN] Done.\n");
+    fprintf(stderr, "\n[SFRush] Shutdown complete.\n");
     return 0;
 }

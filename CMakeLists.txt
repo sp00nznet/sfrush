@@ -1,150 +1,96 @@
 cmake_minimum_required(VERSION 3.20)
-project(SFRushRecompiled
-    VERSION 0.1.0
-    DESCRIPTION "San Francisco Rush: Extreme Racing - Static Recompilation"
-    LANGUAGES C CXX
-)
 
-set(CMAKE_C_STANDARD 17)
+project(SFRushRecompiled VERSION 0.2.0 LANGUAGES C CXX)
+
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_C_STANDARD 17)
+set(CMAKE_C_STANDARD_REQUIRED True)
 
-# Version defines
-add_compile_definitions(
-    SFRUSH_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
-    SFRUSH_VERSION_MINOR=${PROJECT_VERSION_MINOR}
-    SFRUSH_VERSION_PATCH=${PROJECT_VERSION_PATCH}
-)
+# =============================================================================
+# Options
+# =============================================================================
+set(N64_MODERN_RUNTIME_DIR "${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime" CACHE PATH
+    "Path to N64ModernRuntime")
+set(RT64_DIR "${CMAKE_SOURCE_DIR}/lib/rt64" CACHE PATH
+    "Path to RT64 renderer")
+set(CMAKE_TOOLCHAIN_FILE "C:/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE PATH
+    "vcpkg toolchain file")
 
-# ──────────────────────────────────────────────
-# Dependencies
-# ──────────────────────────────────────────────
+# =============================================================================
+# SDL2 (via vcpkg)
+# =============================================================================
+find_package(SDL2 CONFIG REQUIRED)
 
-# SDL2
-include(FetchContent)
-FetchContent_Declare(
-    SDL2
-    URL https://github.com/libsdl-org/SDL/releases/download/release-2.30.3/SDL2-2.30.3.zip
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-)
-FetchContent_MakeAvailable(SDL2)
+# =============================================================================
+# RT64 Renderer
+# =============================================================================
+link_directories("C:/vcpkg/installed/x64-windows/lib")
+link_directories("C:/vcpkg/installed/x64-windows/lib/manual-link")
+set(RT64_STATIC ON CACHE BOOL "Build RT64 as static library" FORCE)
+add_subdirectory(${RT64_DIR} ${CMAKE_BINARY_DIR}/rt64)
 
-# N64ModernRuntime (provides ultramodern + librecomp)
-if(EXISTS "${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/CMakeLists.txt")
-    add_subdirectory(lib/N64ModernRuntime)
-endif()
+# =============================================================================
+# N64ModernRuntime (librecomp + ultramodern)
+# =============================================================================
+add_subdirectory(${N64_MODERN_RUNTIME_DIR} ${CMAKE_BINARY_DIR}/N64ModernRuntime)
 
-# RT64 - N64 RDP GPU emulation
-if(EXISTS "${CMAKE_SOURCE_DIR}/lib/rt64/CMakeLists.txt")
-    add_subdirectory(lib/rt64)
-endif()
-
-# ──────────────────────────────────────────────
+# =============================================================================
 # Recompiled Functions Library
-# ──────────────────────────────────────────────
-
+# =============================================================================
 file(GLOB RECOMP_SOURCES "RecompiledFuncs/*.c")
-if(RECOMP_SOURCES)
-    add_library(RecompiledFuncs STATIC ${RECOMP_SOURCES})
-    target_include_directories(RecompiledFuncs PRIVATE
-        ${CMAKE_SOURCE_DIR}/include
-    )
-    # Suppress warnings in generated code
-    if(MSVC)
-        target_compile_options(RecompiledFuncs PRIVATE /w)
-    else()
-        target_compile_options(RecompiledFuncs PRIVATE
-            -fno-strict-aliasing
-            -Wno-unused-variable
-            -Wno-implicit-function-declaration
-            -Wno-unused-but-set-variable
-            -Wno-sometimes-uninitialized
-        )
-    endif()
-    if(TARGET librecomp)
-        target_link_libraries(RecompiledFuncs PRIVATE librecomp)
-    endif()
-endif()
 
-# ──────────────────────────────────────────────
-# Recompiled Patches Library
-# ──────────────────────────────────────────────
+add_library(RecompiledFuncs STATIC ${RECOMP_SOURCES})
 
-file(GLOB PATCH_SOURCES "RecompiledPatches/*.c")
-if(PATCH_SOURCES)
-    add_library(PatchesLib STATIC ${PATCH_SOURCES})
-    target_include_directories(PatchesLib PRIVATE
-        ${CMAKE_SOURCE_DIR}/include
-        ${CMAKE_SOURCE_DIR}/patches
-    )
-    if(MSVC)
-        target_compile_options(PatchesLib PRIVATE /w)
-    else()
-        target_compile_options(PatchesLib PRIVATE -fno-strict-aliasing)
-    endif()
-endif()
-
-# ──────────────────────────────────────────────
-# Main Executable
-# ──────────────────────────────────────────────
-
-set(SFRUSH_SOURCES
-    src/main/main.cpp
-    src/main/rt64_render_context.cpp
-    src/main/support.cpp
-    src/main/register_overlays.cpp
-    src/main/register_patches.cpp
-    src/game/input.cpp
-    src/game/stubs.cpp
-    src/game/recomp_api.cpp
-    src/game/rom_decompression.cpp
-    rsp/aspMain.cpp
+target_include_directories(RecompiledFuncs PRIVATE
+    ${N64_MODERN_RUNTIME_DIR}/N64Recomp/include
+    ${CMAKE_SOURCE_DIR}/RecompiledFuncs
 )
 
-add_executable(SFRushRecompiled ${SFRUSH_SOURCES})
+if(MSVC)
+    target_compile_options(RecompiledFuncs PRIVATE /w)
+else()
+    target_compile_options(RecompiledFuncs PRIVATE -fno-strict-aliasing)
+endif()
+
+# =============================================================================
+# Main Executable
+# =============================================================================
+add_executable(SFRushRecompiled
+    src/main/main.cpp
+    src/main/section_table.cpp
+    src/main/rt64_render_context.cpp
+    src/main/audio.cpp
+    src/main/os_stubs.cpp
+)
 
 target_include_directories(SFRushRecompiled PRIVATE
+    ${N64_MODERN_RUNTIME_DIR}/N64Recomp/include
+    ${N64_MODERN_RUNTIME_DIR}/librecomp/include
+    ${N64_MODERN_RUNTIME_DIR}/ultramodern/include
+    ${RT64_DIR}/src
+    ${RT64_DIR}/src/contrib
+    ${RT64_DIR}/src/contrib/hlslpp/include
+    ${RT64_DIR}/src/contrib/plume
+    ${RT64_DIR}/src/contrib/imgui
+    ${RT64_DIR}/src/contrib/mupen64plus-core/src/api
+    ${CMAKE_SOURCE_DIR}/RecompiledFuncs
     ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/src
 )
 
-# Link dependencies
-target_link_libraries(SFRushRecompiled PRIVATE SDL2::SDL2 SDL2::SDL2main)
+target_compile_definitions(SFRushRecompiled PRIVATE NOMINMAX HLSL_CPU FFX_GCC)
 
-if(TARGET librecomp)
-    target_link_libraries(SFRushRecompiled PRIVATE librecomp)
-endif()
-if(TARGET ultramodern)
-    target_link_libraries(SFRushRecompiled PRIVATE ultramodern)
-endif()
-if(TARGET rt64)
-    target_link_libraries(SFRushRecompiled PRIVATE rt64)
-endif()
-if(TARGET RecompiledFuncs)
-    target_link_libraries(SFRushRecompiled PRIVATE RecompiledFuncs)
-endif()
-if(TARGET PatchesLib)
-    target_link_libraries(SFRushRecompiled PRIVATE PatchesLib)
-endif()
+target_link_libraries(SFRushRecompiled PRIVATE
+    RecompiledFuncs
+    librecomp
+    ultramodern
+    rt64
+    SDL2::SDL2
+    SDL2::SDL2main
+)
 
-# Platform-specific
 if(WIN32)
-    target_link_libraries(SFRushRecompiled PRIVATE Winmm.lib Dbghelp.lib)
-endif()
-
-# Generate PDB and MAP for debugging in Release
-if(MSVC)
-    set_target_properties(SFRushRecompiled PROPERTIES
-        LINK_FLAGS "/DEBUG /MAP"
-    )
-endif()
-
-# Copy SDL2 DLL on Windows
-if(WIN32)
-    add_custom_command(TARGET SFRushRecompiled POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:SDL2::SDL2>
-            $<TARGET_FILE_DIR:SFRushRecompiled>
-        COMMENT "Copying SDL2.dll"
-    )
+    target_link_libraries(SFRushRecompiled PRIVATE dxgi d3d12 d3dcompiler dbghelp)
+    target_compile_options(SFRushRecompiled PRIVATE /Zi)
+    target_link_options(SFRushRecompiled PRIVATE /DEBUG /OPT:REF /OPT:ICF)
 endif()
