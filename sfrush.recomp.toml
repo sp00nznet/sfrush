@@ -12,37 +12,98 @@ uses_mips3_float_mode = true
 
 # Patches section
 [patches]
-# Stubbed functions - cannot be statically recompiled to C:
-#   External calls:
-#     func_800005D8 - main thread, decompresses+loads game code, calls 0x800BD440
-#     func_800162CC - massive OS/hardware function (RSP, TLB, cache, external calls)
-#   CACHE instructions (no-op on PC):
-#     func_80004650, func_800046D0, func_800054B0, func_8000E250
-#   64-bit FPU (trunc.l, cvt.l, dmfc1/dmtc1):
-#     func_80006DC0
-#   COP0 registers (Cause, EPC):
-#     func_8000D8F0 - reads/writes Cause/EPC registers
-#     func_8000E0C4 - writes EPC, TLB operations
-#   TLB operations (virtual memory, not needed on PC):
-#     func_8000E2D0 - TLB probe
-#     func_80015860 - TLB read/write
 stubs = [
-    # Boot segment stubs
-    "func_80004650",
-    "func_800046D0",
-    "func_800054B0",
-    "func_80006DC0",
-    "func_8000D8F0",
-    "func_8000E0C4",
-    "func_8000E250",
-    "func_8000E2D0",
-    "func_80015860",
-    "func_800162CC",
-    "func_8000DE84",
-    "func_8000F9C0",
-    "func_80015850",
-    # Game code stubs (invalid instruction)
-    "func_800C38A0",
+    # =========================================================================
+    # Hardware register access (CACHE, TLB, COP0, PI, VI, AI, SI, SP, MI)
+    # These are N64 hardware operations reimplemented by ultramodern/librecomp
+    # =========================================================================
+    "func_800040B0",   # PI status read (osPiGetStatus)
+    "func_800040B8",   # PI status wait + uncached ROM read
+    "func_80004650",   # CACHE: osInvalDCache
+    "func_800046D0",   # CACHE: osInvalICache
+    "func_80004F90",   # COP0+MI: interrupt mask (__osSetIntMask-like)
+    "func_800054B0",   # CACHE: osWritebackDCache
+    "func_80006DC0",   # 64-bit FPU (trunc.l, cvt.l, dmfc1/dmtc1) + COP0 calls
+    "func_80007F4C",   # AI: osAiSetNextBuffer
+    "func_8000A1F0",   # AI: osAiSetFrequency
+    "func_8000A2A0",   # AI: osAiGetLength
+    "func_8000D870",   # COP0: MTC0 (write Status register)
+    "func_8000D880",   # COP0: MFC0 (read Status register)
+    "func_8000D8F0",   # COP0+HW: massive interrupt handler (MI,SP,VI,AI,SI,PI)
+    "func_8000DE84",   # Cross-branch function
+    "func_8000DF6C",   # COP0+MI: __osDisableInt-like
+    "func_8000E0C4",   # COP0+MI: __osRestoreInt-like / TLB
+    "func_8000E250",   # CACHE: writeback
+    "func_8000E2D0",   # TLB: probe (TLBP)
+    "func_8000E5F0",   # COP0: MFC0/MTC0 pair (__osGetSR/__osSetSR)
+    "func_8000E610",   # COP0: MFC0/MTC0 pair
+    "func_8000E7A4",   # PI: osPiStartDma / DMA setup
+    "func_8000E940",   # PI: DMA operations
+    "func_8000EA20",   # PI: osEPiStartDma
+    "func_8000EC50",   # PI: osCreatePiManager / PI handler
+    "func_8000F510",   # VI: osViSetMode
+    "func_8000F660",   # VI: osViSwapBuffer / VI handler
+    "func_8000F9C0",   # COP0: read Count register
+    "func_8000F9D0",   # SP: read SP status
+    "func_8000FD70",   # SP: read SP status
+    "func_8000FD80",   # SP: write SP status
+    "func_8000FDC0",   # SP: DMA operations
+    "func_8000FE50",   # SP: status read
+    "func_8000FFA0",   # SI: operations
+    "func_80010C50",   # AI: status read
+    "func_80014D00",   # SI: raw read IO
+    "func_80014D38",   # PI: large DMA handler
+    "func_800153DC",   # PI: DMA callback
+    "func_80015710",   # PI: status read (variant)
+    "func_80015718",   # PI: DMA with status (variant)
+    "func_80015760",   # PI: status read (variant 2)
+    "func_80015768",   # PI: DMA with status (variant 2)
+    "func_80015850",   # COP0: write Compare register
+    "func_80015860",   # TLB: read/write (TLBR, TLBWI, TLBWR)
+    "func_800162CC",   # Massive OS/hardware init (RSP, TLB, cache, everything)
+
+    # =========================================================================
+    # OS wrapper functions (only call other OS functions)
+    # These are standard libultra wrappers reimplemented by ultramodern
+    # =========================================================================
+    "func_80004110",   # osCreateThread
+    "func_80004260",   # osStartThread
+    "func_800043B0",   # osCreateViManager / scheduler
+    "func_80004540",   # osViSetMode + related
+    "func_80004820",   # osPiStartDma wrapper
+    "func_80004930",   # osRecvMesg
+    "func_80004DD0",   # osSetEventMesg (VI)
+    "func_80004E40",   # osSetEventMesg (SP)
+    "func_80004EB0",   # osSetEventMesg (DP)
+    "func_80004F20",   # osSetEventMesg (SI)
+    "func_80005030",   # Thread scheduling
+    "func_80005210",   # Thread priority
+    "func_800053B0",   # Timer functions
+    "func_80005430",   # osJamMesg
+    "func_80005470",   # osSendMesg
+    "func_8000578C",   # Thread dispatch
+    "func_80005880",   # osVirtualToPhysical
+    "func_80009AE0",   # osContInit / controller
+    "func_8000D7B0",   # osCreateMesgQueue + related
+    "func_8000D8A0",   # Interrupt handler setup
+    "func_8000E678",   # PI init + access
+    "func_8000F1A4",   # VI handler
+    "func_8000F314",   # VI set functions
+    "func_8000F388",   # VI swap/configure
+    "func_8000FCF0",   # SP task load
+    "func_80010110",   # SI DMA
+    "func_800101BC",   # SI read
+    "func_80010350",   # SI controller read
+    "func_80010460",   # SI access
+    "func_800155B0",   # PI EPI functions
+    "func_800156B0",   # PI raw DMA
+    "func_800157B0",   # PI write IO
+    "func_80015800",   # PI init
+
+    # =========================================================================
+    # Game code stubs
+    # =========================================================================
+    "func_800C38A0",   # Invalid instruction in game code
 ]
 
 ignored = [
