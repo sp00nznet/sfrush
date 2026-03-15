@@ -21,13 +21,15 @@ stubs = [
     "func_8000E0C4",   # __osRestoreInt variant with TLB
     "func_800162CC",   # Massive OS init (23KB, RSP+TLB+cache+everything)
     "func_80015850",   # COP0 Compare register write
-    "func_80003B18",   # LZSS decompressor — data pre-loaded by on_game_init
+    # func_80003B18 — LZSS decompressor, now runs natively for runtime asset loading
+    # The boot call is a no-op (data pre-loaded) but game code calls it for assets
     "func_800C38A0",   # Game code: invalid instruction
     # Hardware register access functions that don't have direct ultramodern equivalents
     "func_8000D8A0",   # Interrupt handler setup
-    "func_8000E940",   # PI DMA variant
-    "func_80014D38",   # PI large DMA handler
-    "func_800153DC",   # PI DMA callback
+    # PI DMA functions — now run natively to enable ROM loading
+    # "func_8000E940",
+    # "func_80014D38",
+    # "func_800153DC",
     "func_80015718",   # PI DMA variant
     "func_80015768",   # PI DMA variant
     "func_8000FD70",   # SP status read
@@ -71,6 +73,7 @@ ignored = [
     "func_8000F660",   # osViSetSpecialFeatures
     "func_8000F1A4",   # osViGetCurrentFramebuffer
     # PI
+    "func_80004820",   # osPiStartDma wrapper (used by LZSS and DMA code)
     "func_8000E7A4",   # osPiStartDma
     "func_8000EA20",   # osEPiStartDma
     "func_8000EC50",   # osCreatePiManager

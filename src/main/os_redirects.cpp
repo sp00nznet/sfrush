@@ -225,24 +225,24 @@ extern "C" void func_80004540(uint8_t* rdram, recomp_context* ctx) {
     osViSetMode_recomp(rdram, ctx);
     fprintf(stderr, "[SFRush] func_80004540: osViSetMode(NTSC 320x240) called\n");
 
-    // CRITICAL: Set up VI event delivery to the scheduler's retrace queue.
-    // The scheduler thread waits on queue 0x800216B0 for VI retraces.
-    // The recompiled event functions set RDRAM state, but ultramodern's
-    // vi_thread reads from native C++ state. We must bridge by calling
-    // osViSetEvent_recomp to tell ultramodern to deliver VI retraces
-    // to the scheduler's queue.
+    // CRITICAL: Set up VI event delivery.
+    // The scheduler thread waits on queue 0x800216B0, and the game thread
+    // waits on queue 0x80020EB8. We set the VI event on the game's queue
+    // since the scheduler doesn't forward events via osSendMesg.
+    // The scheduler still gets retraces via its own RDRAM-based event setup.
     {
         uint64_t saved_r4 = ctx->r4;
         uint64_t saved_r5 = ctx->r5;
         uint64_t saved_r6 = ctx->r6;
-        ctx->r4 = (uint64_t)(int64_t)(int32_t)0x800216B0; // scheduler retrace queue
-        ctx->r5 = 0; // msg = NULL (standard VI event)
-        ctx->r6 = 1; // retrace count = 1 (every frame)
+        // Set VI event on the GAME's retrace queue
+        ctx->r4 = (uint64_t)(int64_t)(int32_t)0x80020EB8; // game retrace queue
+        ctx->r5 = 0;
+        ctx->r6 = 1;
         osViSetEvent_recomp(rdram, ctx);
+        fprintf(stderr, "[SFRush] func_80004540: osViSetEvent(mq=0x80020EB8) — game retrace\n");
         ctx->r4 = saved_r4;
         ctx->r5 = saved_r5;
         ctx->r6 = saved_r6;
-        fprintf(stderr, "[SFRush] func_80004540: osViSetEvent(mq=0x800216B0, retrace=1) — bridge to ultramodern\n");
     }
 }
 REDIRECT(func_8000F510, osViSwapBuffer_recomp)     // osViSwapBuffer
@@ -255,6 +255,7 @@ REDIRECT(func_8000F660, osViSetSpecialFeatures_recomp) // osViSetSpecialFeatures
 REDIRECT(func_8000F1A4, osViGetCurrentFramebuffer_recomp) // osViGetCurrentFramebuffer
 
 // --- PI (Peripheral Interface / ROM) ---
+REDIRECT(func_80004820, osPiStartDma_recomp)      // osPiStartDma wrapper
 REDIRECT(func_8000E7A4, osPiStartDma_recomp)      // osPiStartDma
 REDIRECT(func_8000EA20, osEPiStartDma_recomp)      // osEPiStartDma
 REDIRECT(func_8000EC50, osCreatePiManager_recomp)  // osCreatePiManager
