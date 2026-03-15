@@ -10,6 +10,7 @@
 
 #include <cstdio>
 #include "recomp.h"
+#include "librecomp/game.hpp"
 
 // ============================================================================
 // Declarations for ultramodern/librecomp reimplemented functions
@@ -195,11 +196,35 @@ REDIRECT(func_8000F1A4, osViGetCurrentFramebuffer_recomp) // osViGetCurrentFrame
 REDIRECT(func_8000E7A4, osPiStartDma_recomp)      // osPiStartDma
 REDIRECT(func_8000EA20, osEPiStartDma_recomp)      // osEPiStartDma
 REDIRECT(func_8000EC50, osCreatePiManager_recomp)  // osCreatePiManager
-REDIRECT(func_800040B0, osPiGetStatus_recomp)      // osPiGetStatus (tiny: 8 bytes)
-REDIRECT(func_800040B8, osPiGetStatus_recomp)      // osPiGetStatus wait variant
 REDIRECT(func_8000E678, osCartRomInit_recomp)       // osCartRomInit
 REDIRECT(func_80015710, osPiGetStatus_recomp)       // osPiGetStatus variant
 REDIRECT(func_80015760, osPiGetStatus_recomp)       // osPiGetStatus variant 2
+
+// func_800040B0: PI status read (2 instructions, falls through to func_800040B8)
+// Just return 0 (PI not busy)
+extern "C" void func_800040B0(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r6 = 0; // PI_STATUS = 0 (not busy)
+}
+
+// func_800040B8: Wait for PI idle, then read 32-bit word from ROM via uncached access
+// Original: reads *(0xA0000000 | osRomBase | a0) and stores to *a1
+// a0 = ROM offset, a1 = destination pointer in RDRAM
+// On PC: read from the loaded ROM buffer using recomp::do_rom_pio
+extern "C" void func_800040B8(uint8_t* rdram, recomp_context* ctx) {
+    // a0 = ROM offset (e.g., 0xFFB000)
+    // a1 = destination RDRAM pointer
+    uint32_t rom_offset = (uint32_t)ctx->r4;
+    uint32_t dest_addr = (uint32_t)ctx->r5;
+
+    // The ROM is 8MB, so mask the offset
+    rom_offset &= 0x7FFFFF;
+
+    // Read from loaded ROM and store to RDRAM destination
+    // physical_addr = rom_base + rom_offset = 0x10000000 + rom_offset
+    uint32_t physical_addr = 0x10000000 + rom_offset;
+    recomp::do_rom_pio(rdram, (gpr)(int32_t)dest_addr, physical_addr);
+    ctx->r2 = 0; // return 0 (success)
+}
 
 // --- SP (RSP) ---
 REDIRECT(func_8000FDC0, osSpTaskLoad_recomp)       // osSpTaskLoad
