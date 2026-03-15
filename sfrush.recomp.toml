@@ -13,13 +13,15 @@ uses_mips3_float_mode = true
 [patches]
 # Stubbed functions: generate empty bodies (for functions we don't redirect)
 stubs = [
-    "func_800005D8",   # LZSS decompress thread — custom impl in game_init_stubs.cpp (linked via /FORCE:MULTIPLE)
+    # func_800005D8 — now un-ignored, runs natively with LZSS decompressor stubbed
+    #"func_800005D8",   # LZSS decompress thread — custom impl in game_init_stubs.cpp (linked via /FORCE:MULTIPLE)
     "func_8000D8F0",   # Massive interrupt handler — too complex to redirect
     "func_8000DE84",   # Cross-branch function
     "func_8000DF6C",   # __osDisableInt variant with MI access
     "func_8000E0C4",   # __osRestoreInt variant with TLB
     "func_800162CC",   # Massive OS init (23KB, RSP+TLB+cache+everything)
     "func_80015850",   # COP0 Compare register write
+    "func_80003B18",   # LZSS decompressor — data pre-loaded by on_game_init
     "func_800C38A0",   # Game code: invalid instruction
     # Hardware register access functions that don't have direct ultramodern equivalents
     "func_8000D8A0",   # Interrupt handler setup
@@ -62,7 +64,7 @@ ignored = [
     "func_80004F20",   # osSetEventMesg (SI)
     # VI
     "func_800043B0",   # osCreateViManager
-    "func_80004540",   # osViSetMode
+    "func_80004540",   # VI mode wrapper — custom impl in os_redirects.cpp
     "func_8000F510",   # osViSwapBuffer
     "func_8000F314",   # osViSetEvent
     "func_8000F388",   # osViBlack

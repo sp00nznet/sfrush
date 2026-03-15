@@ -179,9 +179,44 @@ extern "C" void func_80004F20(uint8_t* rdram, recomp_context* ctx) {
 
 // --- VI (Video Interface) ---
 REDIRECT(func_800043B0, osCreateViManager_recomp)  // osCreateViManager
-// func_80004540 is NOT simple osViSetMode — it's a 2-arg wrapper. Stubbed separately.
+// func_80004540: 2-arg VI mode wrapper. arg0=VI state struct, arg1=mode pointer.
+// When a0=0, loads default VI state from global 0x8001AB60.
+// When a1=0, loads default mode from a0->mode_offset (4).
+// We redirect to osViSetMode with the resolved mode pointer.
 extern "C" void func_80004540(uint8_t* rdram, recomp_context* ctx) {
-    fprintf(stderr, "[SFRush] STUB func_80004540 (VI mode wrapper, 2 args)\n");
+    uint32_t vi_state = (uint32_t)ctx->r4;
+    uint32_t vi_mode = (uint32_t)ctx->r5;
+
+    // Write a default NTSC LAN1 mode to RDRAM at 0x80058000 if not already set
+    static bool mode_initialized = false;
+    if (!mode_initialized) {
+        uint32_t mode_offset = 0x58000; // RDRAM offset for our scratch mode
+        uint32_t* mode = (uint32_t*)(rdram + mode_offset);
+        mode[0] = 1;           // type = NTSC
+        mode[1] = 0x00003016;  // ctrl
+        mode[2] = 320;         // width
+        mode[3] = 0x03E52239;  // burst
+        mode[4] = 0x0000020D;  // vSync
+        mode[5] = 0x00000C15;  // hSync
+        mode[6] = 0x0C150C15;  // leap
+        mode[7] = 0x006C02EC;  // hStart
+        mode[8] = 0x00000200;  // xScale
+        mode[9] = 0;           // vCurrent
+        mode[10] = 0;          // fldRegs[0].origin
+        mode[11] = 0x02000800; // fldRegs[0].yScale
+        mode[12] = 0x00250239; // fldRegs[0].vStart
+        mode[13] = 0x000E0204; // fldRegs[0].vBurst
+        mode[14] = 0;          // fldRegs[1].origin
+        mode[15] = 0x02000800;
+        mode[16] = 0x00250239;
+        mode[17] = 0x000E0204;
+        mode_initialized = true;
+    }
+
+    // Always call osViSetMode with our NTSC mode
+    ctx->r4 = (uint64_t)(int64_t)(int32_t)0x80058000;
+    osViSetMode_recomp(rdram, ctx);
+    fprintf(stderr, "[SFRush] func_80004540: osViSetMode(NTSC 320x240) called\n");
 }
 REDIRECT(func_8000F510, osViSwapBuffer_recomp)     // osViSwapBuffer
 // func_8000F314 might not be osViSetEvent - stub for safety

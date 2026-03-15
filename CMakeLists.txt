@@ -63,7 +63,6 @@ add_executable(SFRushRecompiled
     src/main/audio.cpp
     src/main/os_stubs.cpp
     src/main/os_redirects.cpp
-    src/main/game_init_stubs.cpp
 )
 
 target_include_directories(SFRushRecompiled PRIVATE
