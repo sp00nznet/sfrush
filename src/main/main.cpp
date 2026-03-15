@@ -224,15 +224,13 @@ void on_game_init(uint8_t* rdram, recomp_context* ctx) {
                 GAME_BSS_START, GAME_BSS_END, bss_size);
     }
 
-    // Initialize osRomBase (0x80000308) = 0x10000000 (PI bus ROM base)
-    // This is normally set by the IPL boot code
+    // Initialize osRomBase (0x80000308) = 0xB0000000 (KSEG1 uncached PI ROM base)
+    // On real N64: physical ROM at 0x10000000, KSEG1 = 0xA0000000 + physical
+    // So ROM in KSEG1 = 0xB0000000. The IPL sets this during boot.
     {
         uint32_t* rom_base = (uint32_t*)(rdram + (0x80000308 - 0x80000000));
-        *rom_base = 0x10000000;  // Big-endian: needs byte swap on LE
-        // Actually recomp uses big-endian RDRAM access, so just store directly
-        // MEM_W macro does: *(int32_t*)(rdram + (addr - 0x80000000))
-        // This stores in native endian. But the game reads via MEM_W too, so it's consistent.
-        fprintf(stderr, "[SFRush]   Set osRomBase at 0x80000308 = 0x10000000\n");
+        *rom_base = 0xB0000000;
+        fprintf(stderr, "[SFRush]   Set osRomBase at 0x80000308 = 0xB0000000\n");
     }
 
     // Initialize osTvType (0x80000300) = 1 (NTSC)
