@@ -120,15 +120,13 @@ extern "C" {
 // Redirect macros — map func_XXXXXXXX to the ultramodern _recomp version
 // ============================================================================
 
-static bool g_trace_os = true; // Set to false after boot to reduce spam
 static int g_os_call_count = 0;
 
 #define REDIRECT(vram_func, ultra_func) \
     extern "C" void vram_func(uint8_t* rdram, recomp_context* ctx) { \
-        if (g_trace_os && g_os_call_count < 200) { \
+        if (g_os_call_count < 500) { \
             g_os_call_count++; \
-            fprintf(stderr, "[OS] " #ultra_func " (via " #vram_func ") a0=0x%llX a1=0x%llX a2=0x%llX\n", \
-                    (unsigned long long)ctx->r4, (unsigned long long)ctx->r5, (unsigned long long)ctx->r6); \
+            fprintf(stderr, "[OS] " #ultra_func " (via " #vram_func ")\n"); \
         } \
         ultra_func(rdram, ctx); \
     }

@@ -8,6 +8,8 @@
 #include "recomp.h"
 
 extern "C" void func_800BD440(uint8_t* rdram, recomp_context* ctx);
+extern "C" void func_800007F0(uint8_t* rdram, recomp_context* ctx);
+extern "C" void func_8000096C(uint8_t* rdram, recomp_context* ctx);
 extern "C" void osCreateMesgQueue_recomp(uint8_t* rdram, recomp_context* ctx);
 extern "C" void __osSetFpcCsr_recomp(uint8_t* rdram, recomp_context* ctx);
 extern "C" void osViSetEvent_recomp(uint8_t* rdram, recomp_context* ctx);
@@ -55,6 +57,45 @@ extern "C" void func_800005D8(uint8_t* rdram, recomp_context* ctx) {
 
     // Store 1 to 0x80021664 (flag set by original after queue creation)
     *(uint32_t*)(rdram + (0x80021664 - 0x80000000)) = 1;
+
+    // Call func_800007F0 (scheduler/handler setup) and func_8000096C
+    // These are recompiled boot functions that set up the retrace handler
+    // and register event messages. Without them, the game loops waiting
+    // for scheduler command 0xABE on queue 0x80021470.
+    {
+        fprintf(stderr, "[SFRush]   Calling func_800007F0 (scheduler setup)...\n");
+        // func_800007F0 args: a0=handler_struct, a1=mq_ptr, a2=0, a3=bootproc_arg
+        // stack: sp+0x10=retrace_mq, sp+0x14=frame_count
+        // Allocate stack space in RDRAM for the call
+        uint64_t orig_sp = ctx->r29;
+        ctx->r29 = orig_sp - 0x40; // reserve stack space
+        // Store stack args at sp+0x10 and sp+0x14
+        *(uint32_t*)(rdram + ((uint32_t)(ctx->r29 + 0x10) - 0x80000000)) = (uint32_t)0x80020EB8;
+        *(uint32_t*)(rdram + ((uint32_t)(ctx->r29 + 0x14) - 0x80000000)) = 1;
+        // func args
+        ctx->r4 = (uint64_t)(int64_t)(int32_t)0x80021670; // handler struct
+        ctx->r5 = 0;  // not used by func_800007F0 initially
+        ctx->r6 = 0;
+        ctx->r7 = saved_a0; // bootproc arg
+        // Set RA to 0 so the function returns to us
+        ctx->r31 = 0;
+        func_800007F0(rdram, ctx);
+        ctx->r29 = orig_sp; // restore stack
+        fprintf(stderr, "[SFRush]   Scheduler setup done\n");
+
+        fprintf(stderr, "[SFRush]   Calling func_8000096C (event setup)...\n");
+        // func_8000096C args: a0=handler_struct, a1=msg_addr, a2=event_mq
+        uint64_t orig_sp2 = ctx->r29;
+        ctx->r29 = orig_sp2 - 0x40;
+        ctx->r4 = (uint64_t)(int64_t)(int32_t)0x80021670;
+        // a1 = pointer to a local msg on stack
+        ctx->r5 = ctx->r29 + 0x28;
+        ctx->r6 = (uint64_t)(int64_t)(int32_t)0x80021470;
+        ctx->r31 = 0;
+        func_8000096C(rdram, ctx);
+        ctx->r29 = orig_sp2;
+        fprintf(stderr, "[SFRush]   Event setup done\n");
+    }
 
     // Store 90.0f to 0x80021590 (FPU constant set by original)
     float val = 90.0f;
