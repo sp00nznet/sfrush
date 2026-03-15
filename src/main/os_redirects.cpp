@@ -150,32 +150,39 @@ REDIRECT(func_80005210, osSetThreadPri_recomp)    // osSetThreadPri
 
 // --- Message queues ---
 REDIRECT(func_8000D7B0, osCreateMesgQueue_recomp) // osCreateMesgQueue
-REDIRECT(func_80004930, osRecvMesg_recomp)        // osRecvMesg
-REDIRECT(func_80005470, osSendMesg_recomp)        // osSendMesg
-REDIRECT(func_80005430, osJamMesg_recomp)         // osJamMesg
+
+extern "C" void func_80004930(uint8_t* rdram, recomp_context* ctx) {
+    uint32_t mq = (uint32_t)ctx->r4;
+    uint32_t flag = (uint32_t)ctx->r6;
+    if (g_os_call_count < 500) {
+        g_os_call_count++;
+        fprintf(stderr, "[OS] osRecvMesg(mq=0x%08X, flag=%d)\n", mq, flag);
+    }
+    osRecvMesg_recomp(rdram, ctx);
+    if (g_os_call_count < 500) {
+        fprintf(stderr, "[OS] osRecvMesg returned\n");
+    }
+}
+
+extern "C" void func_80005470(uint8_t* rdram, recomp_context* ctx) {
+    uint32_t mq = (uint32_t)ctx->r4;
+    uint32_t msg = (uint32_t)ctx->r5;
+    uint32_t flag = (uint32_t)ctx->r6;
+    fprintf(stderr, "[OS] osSendMesg(mq=0x%08X, msg=0x%08X, flag=%d)\n", mq, msg, flag);
+    osSendMesg_recomp(rdram, ctx);
+}
+
+extern "C" void func_80005430(uint8_t* rdram, recomp_context* ctx) {
+    uint32_t mq = (uint32_t)ctx->r4;
+    uint32_t msg = (uint32_t)ctx->r5;
+    fprintf(stderr, "[OS] osJamMesg(mq=0x%08X, msg=0x%08X)\n", mq, msg);
+    osJamMesg_recomp(rdram, ctx);
+}
 
 // --- Event messages ---
-// These are wrappers that call osSetEventMesg with specific event types.
-// They take (mq, msg) as args and internally set the event type.
-// Safe to stub — ultramodern handles events via its own mechanism.
-extern "C" void func_80004DD0(uint8_t* rdram, recomp_context* ctx) {
-    // VI event — redirect to osSetEventMesg with OS_EVENT_VI (14)
-    // ctx->r4 = mq, ctx->r5 = msg, set ctx->r6 = event type
-    ctx->r6 = 14; // OS_EVENT_VI
-    osSetEventMesg_recomp(rdram, ctx);
-}
-extern "C" void func_80004E40(uint8_t* rdram, recomp_context* ctx) {
-    ctx->r6 = 0; // OS_EVENT_SP
-    osSetEventMesg_recomp(rdram, ctx);
-}
-extern "C" void func_80004EB0(uint8_t* rdram, recomp_context* ctx) {
-    ctx->r6 = 11; // OS_EVENT_DP
-    osSetEventMesg_recomp(rdram, ctx);
-}
-extern "C" void func_80004F20(uint8_t* rdram, recomp_context* ctx) {
-    ctx->r6 = 4; // OS_EVENT_SI
-    osSetEventMesg_recomp(rdram, ctx);
-}
+// func_80004DD0, func_80004E40, func_80004EB0, func_80004F20
+// These are complex internal OS functions that manipulate RDRAM event tables.
+// They run as recompiled code (not redirected to ultramodern).
 
 // --- VI (Video Interface) ---
 REDIRECT(func_800043B0, osCreateViManager_recomp)  // osCreateViManager
@@ -217,6 +224,26 @@ extern "C" void func_80004540(uint8_t* rdram, recomp_context* ctx) {
     ctx->r4 = (uint64_t)(int64_t)(int32_t)0x80058000;
     osViSetMode_recomp(rdram, ctx);
     fprintf(stderr, "[SFRush] func_80004540: osViSetMode(NTSC 320x240) called\n");
+
+    // CRITICAL: Set up VI event delivery to the scheduler's retrace queue.
+    // The scheduler thread waits on queue 0x800216B0 for VI retraces.
+    // The recompiled event functions set RDRAM state, but ultramodern's
+    // vi_thread reads from native C++ state. We must bridge by calling
+    // osViSetEvent_recomp to tell ultramodern to deliver VI retraces
+    // to the scheduler's queue.
+    {
+        uint64_t saved_r4 = ctx->r4;
+        uint64_t saved_r5 = ctx->r5;
+        uint64_t saved_r6 = ctx->r6;
+        ctx->r4 = (uint64_t)(int64_t)(int32_t)0x800216B0; // scheduler retrace queue
+        ctx->r5 = 0; // msg = NULL (standard VI event)
+        ctx->r6 = 1; // retrace count = 1 (every frame)
+        osViSetEvent_recomp(rdram, ctx);
+        ctx->r4 = saved_r4;
+        ctx->r5 = saved_r5;
+        ctx->r6 = saved_r6;
+        fprintf(stderr, "[SFRush] func_80004540: osViSetEvent(mq=0x800216B0, retrace=1) — bridge to ultramodern\n");
+    }
 }
 REDIRECT(func_8000F510, osViSwapBuffer_recomp)     // osViSwapBuffer
 // func_8000F314 might not be osViSetEvent - stub for safety
