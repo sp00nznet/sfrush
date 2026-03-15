@@ -94,5 +94,5 @@ target_link_libraries(SFRushRecompiled PRIVATE
 if(WIN32)
     target_link_libraries(SFRushRecompiled PRIVATE dxgi d3d12 d3dcompiler dbghelp)
     target_compile_options(SFRushRecompiled PRIVATE /Zi)
-    target_link_options(SFRushRecompiled PRIVATE /DEBUG /OPT:REF /OPT:ICF /FORCE:MULTIPLE)
+    target_link_options(SFRushRecompiled PRIVATE /DEBUG /OPT:REF /OPT:ICF /FORCE:MULTIPLE /MAP)
 endif()

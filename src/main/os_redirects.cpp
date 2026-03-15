@@ -148,16 +148,39 @@ REDIRECT(func_80005470, osSendMesg_recomp)        // osSendMesg
 REDIRECT(func_80005430, osJamMesg_recomp)         // osJamMesg
 
 // --- Event messages ---
-REDIRECT(func_80004DD0, osSetEventMesg_recomp)    // osSetEventMesg (VI)
-REDIRECT(func_80004E40, osSetEventMesg_recomp)    // osSetEventMesg (SP)
-REDIRECT(func_80004EB0, osSetEventMesg_recomp)    // osSetEventMesg (DP)
-REDIRECT(func_80004F20, osSetEventMesg_recomp)    // osSetEventMesg (SI)
+// These are wrappers that call osSetEventMesg with specific event types.
+// They take (mq, msg) as args and internally set the event type.
+// Safe to stub — ultramodern handles events via its own mechanism.
+extern "C" void func_80004DD0(uint8_t* rdram, recomp_context* ctx) {
+    // VI event — redirect to osSetEventMesg with OS_EVENT_VI (14)
+    // ctx->r4 = mq, ctx->r5 = msg, set ctx->r6 = event type
+    ctx->r6 = 14; // OS_EVENT_VI
+    osSetEventMesg_recomp(rdram, ctx);
+}
+extern "C" void func_80004E40(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r6 = 0; // OS_EVENT_SP
+    osSetEventMesg_recomp(rdram, ctx);
+}
+extern "C" void func_80004EB0(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r6 = 11; // OS_EVENT_DP
+    osSetEventMesg_recomp(rdram, ctx);
+}
+extern "C" void func_80004F20(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r6 = 4; // OS_EVENT_SI
+    osSetEventMesg_recomp(rdram, ctx);
+}
 
 // --- VI (Video Interface) ---
 REDIRECT(func_800043B0, osCreateViManager_recomp)  // osCreateViManager
-REDIRECT(func_80004540, osViSetMode_recomp)        // osViSetMode
+// func_80004540 is NOT simple osViSetMode — it's a 2-arg wrapper. Stubbed separately.
+extern "C" void func_80004540(uint8_t* rdram, recomp_context* ctx) {
+    fprintf(stderr, "[SFRush] STUB func_80004540 (VI mode wrapper, 2 args)\n");
+}
 REDIRECT(func_8000F510, osViSwapBuffer_recomp)     // osViSwapBuffer
-REDIRECT(func_8000F314, osViSetEvent_recomp)       // osViSetEvent
+// func_8000F314 might not be osViSetEvent - stub for safety
+extern "C" void func_8000F314(uint8_t* rdram, recomp_context* ctx) {
+    fprintf(stderr, "[SFRush] STUB func_8000F314 (VI set functions)\n");
+}
 REDIRECT(func_8000F388, osViBlack_recomp)          // osViBlack
 REDIRECT(func_8000F660, osViSetSpecialFeatures_recomp) // osViSetSpecialFeatures
 REDIRECT(func_8000F1A4, osViGetCurrentFramebuffer_recomp) // osViGetCurrentFramebuffer

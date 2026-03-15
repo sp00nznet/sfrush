@@ -13,6 +13,7 @@ uses_mips3_float_mode = true
 [patches]
 # Stubbed functions: generate empty bodies (for functions we don't redirect)
 stubs = [
+    "func_800005D8",   # LZSS decompress thread — custom impl in game_init_stubs.cpp (linked via /FORCE:MULTIPLE)
     "func_8000D8F0",   # Massive interrupt handler — too complex to redirect
     "func_8000DE84",   # Cross-branch function
     "func_8000DF6C",   # __osDisableInt variant with MI access
@@ -42,8 +43,6 @@ stubs = [
 # Ignored functions: generate NO code — we provide custom implementations
 # in os_redirects.cpp and game_init_stubs.cpp
 ignored = [
-    # Custom game init (replaces LZSS decompress + game entry)
-    "func_800005D8",
     # OS init
     "func_80003E20",   # osInitialize
     "func_80003A10",   # __osSetFpcCsr
