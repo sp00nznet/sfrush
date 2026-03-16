@@ -9,6 +9,8 @@
 // and read arguments from ctx->r4, r5, r6, r7 (matching MIPS calling convention).
 
 #include <cstdio>
+#include <thread>
+#include <chrono>
 #include "recomp.h"
 #include "librecomp/game.hpp"
 
@@ -431,6 +433,50 @@ REDIRECT(func_80003A10, __osSetFpcCsr_recomp)       // __osSetFpcCsr
 // --- Timer ---
 REDIRECT(func_800053B0, osSetTimer_recomp)          // osSetTimer
 REDIRECT(func_80005030, osGetTime_recomp)           // osGetTime
+
+// --- Thread 7 entry wrapper ---
+// Thread 7 (func_800BBE88) runs at higher priority than thread 6.
+// In the N64 OS, threads only run when the current thread blocks.
+// In our recomp, threads run in parallel. Thread 7 must wait for
+// the main thread to finish initializing the memory pool.
+extern "C" void func_800B021C(uint8_t* rdram, recomp_context* ctx);
+extern "C" void func_800BBD14(uint8_t* rdram, recomp_context* ctx);
+extern "C" void func_800BBE88(uint8_t* rdram, recomp_context* ctx) {
+    // Wait for main thread init to complete.
+    // The main thread (thread 6) runs func_800BD440 which calls func_800BC014.
+    // func_800BC014 initializes everything, then sets up game state.
+    // On the real N64, thread 7 only runs after thread 6 blocks on osRecvMesg.
+    // We wait for multiple init indicators to be non-zero.
+    fprintf(stderr, "[SFRush] Thread 7: waiting for main thread init...\n");
+    volatile uint32_t* pool_ptr = (volatile uint32_t*)(rdram + 0xF44C4);
+    volatile uint32_t* table_ptr = (volatile uint32_t*)(rdram + 0x161700);
+    int wait_count = 0;
+    while (*pool_ptr == 0 || *table_ptr == 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        wait_count++;
+        if (wait_count > 1000) { // 10 second timeout
+            fprintf(stderr, "[SFRush] Thread 7: TIMEOUT! pool=0x%08X table=0x%08X\n",
+                    *pool_ptr, *table_ptr);
+            break;
+        }
+    }
+    fprintf(stderr, "[SFRush] Thread 7: init ready (pool=0x%08X table=0x%08X), waited %dms\n",
+            *pool_ptr, *table_ptr, wait_count * 10);
+
+    // Original thread 7 code
+    ctx->r14 = MEM_W((int64_t)(int32_t)0x80020000, 0x1580);
+    ctx->r15 = MEM_W((int64_t)(int32_t)0x80020000, 0x1584);
+    ctx->r29 = ADD32(ctx->r29, -0x18);
+    *(uint32_t*)(rdram + 0x161338) = (uint32_t)ctx->r14;
+    MEM_W(0x14, ctx->r29) = ctx->r31;
+    *(uint32_t*)(rdram + 0x161358) = (uint32_t)ctx->r15;
+    func_800B021C(rdram, ctx);
+    *(uint32_t*)(rdram + 0x1612F4) = 0;
+    func_800BBD14(rdram, ctx);
+
+    ctx->r31 = MEM_W(ctx->r29, 0x14);
+    ctx->r29 = ADD32(ctx->r29, 0x18);
+}
 
 // func_80007C50 (heap allocator) and func_80003B18 (LZSS) run natively
 

@@ -22,6 +22,7 @@ stubs = [
     "func_800162CC",   # Massive OS init (23KB, RSP+TLB+cache+everything)
     "func_80015850",   # COP0 Compare register write
         # func_80003B18 — LZSS decompressor runs natively
+    "func_800BBE88",   # Thread 7 entry — custom impl in os_redirects.cpp
     "func_800C38A0",   # Game code: invalid instruction
     # Hardware register access functions that don't have direct ultramodern equivalents
     "func_8000D8A0",   # Interrupt handler setup
@@ -92,6 +93,7 @@ ignored = [
     "func_80007F4C",   # Audio freq compute (DACRATE / freq)
     "func_8000A2A0",   # osAiGetLength
     "func_80010C50",   # osAiGetStatus
+    # func_800BBE88 — Thread 7 entry, custom impl in os_redirects.cpp
     # Controller — stubs provided in os_redirects.cpp
     # Memory / Cache
     "func_80005880",   # osVirtualToPhysical
