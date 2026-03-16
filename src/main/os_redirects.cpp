@@ -229,9 +229,10 @@ extern "C" void func_80004540(uint8_t* rdram, recomp_context* ctx) {
         mode_initialized = true;
     }
 
-    // Install a monitoring write at 0x80162AE8 to track when it changes
-    // (will be overwritten by game code when it writes there)
-    *(uint32_t*)(rdram + 0x162AE8) = 0xDEADBEEF; // sentinel value
+    // Initialize N64 DACRATE constant (must be set AFTER BSS zeroing)
+    // 0x80019D78 = NTSC master clock = 48,681,812 Hz
+    // Without this, osAiSetFrequency divides by zero → FPU corruption → crash
+    *(uint32_t*)(rdram + 0x19D78) = 0x02E6D354;
 
     // Always call osViSetMode with our NTSC mode
     ctx->r4 = (uint64_t)(int64_t)(int32_t)0x80058000;
@@ -346,7 +347,50 @@ REDIRECT(func_8000FCF0, osSpTaskStartGo_recomp)    // osSpTaskStartGo
 
 // --- AI (Audio) ---
 REDIRECT(func_8000A1F0, osAiSetFrequency_recomp)   // osAiSetFrequency
-REDIRECT(func_80007F4C, osAiSetNextBuffer_recomp)  // osAiSetNextBuffer
+// func_80007F40 + func_80007F4C — Audio frequency computation
+// func_80007F40 is 3 instructions that fall through to func_80007F4C.
+// In the recomp, the fall-through doesn't happen (separate C functions).
+// We provide both as a combined implementation.
+extern "C" void func_80007F4C(uint8_t* rdram, recomp_context* ctx);
+extern "C" void func_80007F40(uint8_t* rdram, recomp_context* ctx) {
+    // Original: read dacrate from global, put arg in f8, fall through to 80007F4C
+    ctx->r14 = MEM_W((int64_t)(int32_t)0x80020000, -0x6288); // lw t6, -0x6288($8002) = 0x80019D78
+    ctx->f8.u32l = ctx->r4; // mtc1 a0, f8
+    // Fall through to func_80007F4C
+    func_80007F4C(rdram, ctx);
+}
+
+// func_80007F4C — Audio frequency computation
+// This is NOT osAiSetNextBuffer! func_80007F40 falls through to it.
+// It computes: DAC_divisor = DACRATE / requested_freq
+// Returns the divisor in v0.
+// We implement it directly because the DACRATE global (0x80019D78)
+// is zeroed by BSS init and we need to provide the correct value.
+extern "C" void func_80007F4C(uint8_t* rdram, recomp_context* ctx) {
+    // Ensure DACRATE is initialized (0x02E6D354 = N64 NTSC ~48.68MHz)
+    uint32_t dacrate = *(uint32_t*)(rdram + 0x19D78);
+    if (dacrate == 0) {
+        dacrate = 0x02E6D354;
+        *(uint32_t*)(rdram + 0x19D78) = dacrate;
+    }
+
+    // ctx->r14 = dacrate (set by func_80007F40 which loaded from 0x80019D78)
+    // ctx->r4 = requested frequency (e.g., 0x5622 = 22050 Hz)
+    // ctx->f8.u32l = a0 (set by func_80007F40's mtc1)
+    uint32_t freq = (uint32_t)ctx->r4;
+    if (freq == 0) freq = 22050; // default
+
+    // Compute divisor: dacrate / freq - 1 (standard N64 osAiSetFrequency)
+    uint32_t divisor = dacrate / freq;
+    if (divisor > 0) divisor--;
+
+    // Return actual frequency achieved
+    uint32_t actual_freq = dacrate / (divisor + 1);
+    ctx->r2 = (uint64_t)(int64_t)(int32_t)actual_freq;
+
+    fprintf(stderr, "[SFRush] func_80007F4C: freq=%u dacrate=0x%X divisor=%u actual=%u\n",
+            freq, dacrate, divisor, actual_freq);
+}
 REDIRECT(func_8000A2A0, osAiGetLength_recomp)       // osAiGetLength
 REDIRECT(func_80010C50, osAiGetStatus_recomp)       // osAiGetStatus
 
@@ -388,44 +432,7 @@ REDIRECT(func_80003A10, __osSetFpcCsr_recomp)       // __osSetFpcCsr
 REDIRECT(func_800053B0, osSetTimer_recomp)          // osSetTimer
 REDIRECT(func_80005030, osGetTime_recomp)           // osGetTime
 
-// --- Heap allocator with FPU fix ---
-// The game computes allocation sizes from float operations using f0 (90.0).
-// Due to FPU register state not being properly initialized in the recomp,
-// the computed value at 0x80162AE8 is garbage (0xFDDE2E10 instead of 0x1D0).
-// We detect and fix the corrupted values before they cause allocations.
-extern "C" void func_80007C50(uint8_t* rdram, recomp_context* ctx) {
-    // Fix known corrupted values from mupen comparison
-    uint32_t val_ae0 = *(uint32_t*)(rdram + 0x162AE0);
-    uint32_t val_ae4 = *(uint32_t*)(rdram + 0x162AE4);
-    uint32_t val_ae8 = *(uint32_t*)(rdram + 0x162AE8);
-    static bool fixed = false;
-    if (!fixed && val_ae8 != 0 && val_ae8 > 0x10000) {
-        // Values are corrupted from bad float computation
-        *(uint32_t*)(rdram + 0x162AE0) = 0x00000170;
-        *(uint32_t*)(rdram + 0x162AE4) = 0x000000E5;
-        *(uint32_t*)(rdram + 0x162AE8) = 0x000001D0;
-        fprintf(stderr, "[ALLOC FIX] Corrected 0x80162AE0-AE8 from [0x%X,0x%X,0x%X] to [0x170,0xE5,0x1D0]\n",
-                val_ae0, val_ae4, val_ae8);
-        fixed = true;
-    }
-
-    // Native bump allocator
-    uint32_t sp = (uint32_t)ctx->r29;
-    uint32_t alloc_size = *(uint32_t*)(rdram + ((sp + 0x10) & 0x7FFFFF));
-    uint32_t a2 = (uint32_t)ctx->r6;
-    uint32_t heap_off = (a2 & 0x7FFFFF);
-    uint32_t base = *(uint32_t*)(rdram + heap_off);
-    uint32_t cur = *(uint32_t*)(rdram + heap_off + 4);
-    uint32_t total = *(uint32_t*)(rdram + heap_off + 8);
-    uint32_t end = base + total;
-    uint32_t aligned = (cur + 0xF) & ~0xF;
-    if (alloc_size > 0x100000 || aligned + alloc_size > end) {
-        ctx->r2 = 0; ctx->r3 = 0; return;
-    }
-    *(uint32_t*)(rdram + heap_off + 4) = aligned + alloc_size;
-    ctx->r2 = (uint64_t)(int64_t)(int32_t)aligned;
-    ctx->r3 = ctx->r2;
-}
+// func_80007C50 (heap allocator) runs natively
 
 // --- TLB ---
 REDIRECT(func_8000E2D0, osUnmapTLBAll_recomp)      // TLB probe/unmap

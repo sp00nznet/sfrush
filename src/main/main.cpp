@@ -264,18 +264,13 @@ void on_game_init(uint8_t* rdram, recomp_context* ctx) {
         fprintf(stderr, "[SFRush]   Set PI handle at 0x80019D90 -> 0x%08X\n", handle_addr);
     }
 
-    // Pre-populate critical game globals from mupen RDRAM dump.
-    // These values are normally set by game init code between frames,
-    // but our init timing differs. Without these, the heap allocator
-    // reads garbage sizes and crashes.
-    // TODO: fix the root cause (game init code path not executing)
+    // Initialize N64 audio DAC rate constant at 0x80019D78
+    // This is the NTSC master clock (48,681,812 Hz) used by osAiSetFrequency.
+    // Without this, the audio frequency computation divides by zero,
+    // producing garbage FPU values that corrupt the entire init sequence.
     {
-        // Values at 0x80162AE0-0x80162AEC (allocation size table)
-        *(uint32_t*)(rdram + 0x162AE0) = 0x00000170;
-        *(uint32_t*)(rdram + 0x162AE4) = 0x000000E5;
-        *(uint32_t*)(rdram + 0x162AE8) = 0x000001D0;
-        *(uint32_t*)(rdram + 0x162AEC) = 0x00000000;
-        fprintf(stderr, "[SFRush]   Pre-populated allocation sizes at 0x80162AE0\n");
+        *(uint32_t*)(rdram + (0x80019D78 - 0x80000000)) = 0x02E6D354;
+        fprintf(stderr, "[SFRush]   Set DACRATE at 0x80019D78 = 0x02E6D354 (48.68MHz)\n");
     }
 
     fprintf(stderr, "[SFRush] on_game_init complete.\n");

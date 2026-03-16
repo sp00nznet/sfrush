@@ -59,7 +59,7 @@ ignored = [
     "func_80005470",   # osSendMesg (external wrapper)
     "func_80005430",   # osJamMesg (external wrapper)
     "func_800050C0",   # osSendMesg (internal, used by DMA system)
-    "func_80007C50",   # heap allocator — sentinel check wrapper
+    # func_80007C50 — heap allocator runs natively
     # Event messages — now run natively (complex internal OS functions)
     # "func_80004DD0",
     # "func_80004E40",
@@ -88,7 +88,8 @@ ignored = [
     "func_8000FCF0",   # osSpTaskStartGo
     # AI
     "func_8000A1F0",   # osAiSetFrequency
-    "func_80007F4C",   # osAiSetNextBuffer
+    "func_80007F40",   # Audio freq setup (falls through to func_80007F4C)
+    "func_80007F4C",   # Audio freq compute (DACRATE / freq)
     "func_8000A2A0",   # osAiGetLength
     "func_80010C50",   # osAiGetStatus
     # Controller — stubs provided in os_redirects.cpp
