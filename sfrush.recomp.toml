@@ -60,6 +60,7 @@ ignored = [
     "func_80005470",   # osSendMesg (external wrapper)
     "func_80005430",   # osJamMesg (external wrapper)
     "func_800050C0",   # osSendMesg (internal, used by DMA system)
+    "func_80007C50",   # Heap allocator — debug wrapper to find garbage size source
     # Event messages — now run natively (complex internal OS functions)
     # "func_80004DD0",
     # "func_80004E40",
