@@ -91,16 +91,19 @@ ignored = [
     "func_80007F4C",   # osAiSetNextBuffer
     "func_8000A2A0",   # osAiGetLength
     "func_80010C50",   # osAiGetStatus
-    # Controller
-    "func_80009AE0",   # osContInit
-    "func_80010350",   # osContStartReadData
-    "func_80010460",   # osContGetReadData
+    # Controller — stubs provided in os_redirects.cpp
     # Memory / Cache
     "func_80005880",   # osVirtualToPhysical
     "func_80004650",   # osInvalDCache
     "func_800046D0",   # osInvalICache
     "func_800054B0",   # osWritebackDCache
     "func_8000E250",   # osWritebackDCacheAll
+    # Controller (SI hardware stubs in os_redirects.cpp)
+    "func_80009AE0",   # osContInit wrapper
+    "func_80010350",   # osContStartReadData wrapper
+    "func_80010460",   # osContGetReadData wrapper
+    "func_80010110",   # SI DMA
+    "func_800101BC",   # SI read
     # COP0 / Interrupt
     "func_8000E5F0",   # __osDisableInt
     "func_8000E610",   # __osRestoreInt

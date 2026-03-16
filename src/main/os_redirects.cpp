@@ -351,9 +351,12 @@ REDIRECT(func_8000A2A0, osAiGetLength_recomp)       // osAiGetLength
 REDIRECT(func_80010C50, osAiGetStatus_recomp)       // osAiGetStatus
 
 // --- SI (Controller) ---
-REDIRECT(func_80009AE0, osContInit_recomp)          // osContInit
-REDIRECT(func_80010350, osContStartReadData_recomp) // osContStartReadData
-REDIRECT(func_80010460, osContGetReadData_recomp)   // osContGetReadData
+// These need SI hardware which doesn't exist in recomp. Stub them.
+extern "C" void func_80009AE0(uint8_t* rdram, recomp_context* ctx) { ctx->r2 = 0; }
+extern "C" void func_80010350(uint8_t* rdram, recomp_context* ctx) { ctx->r2 = 0; }
+extern "C" void func_80010460(uint8_t* rdram, recomp_context* ctx) {}
+extern "C" void func_80010110(uint8_t* rdram, recomp_context* ctx) { ctx->r2 = 0; }
+extern "C" void func_800101BC(uint8_t* rdram, recomp_context* ctx) { ctx->r2 = 0; }
 
 // --- Memory / Cache ---
 REDIRECT(func_80005880, osVirtualToPhysical_recomp) // osVirtualToPhysical
