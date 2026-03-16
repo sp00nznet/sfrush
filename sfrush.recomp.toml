@@ -57,8 +57,9 @@ ignored = [
     # Message queues
     "func_8000D7B0",   # osCreateMesgQueue
     "func_80004930",   # osRecvMesg
-    "func_80005470",   # osSendMesg
-    "func_80005430",   # osJamMesg
+    "func_80005470",   # osSendMesg (external wrapper)
+    "func_80005430",   # osJamMesg (external wrapper)
+    "func_800050C0",   # osSendMesg (internal, used by DMA system)
     # Event messages — now run natively (complex internal OS functions)
     # "func_80004DD0",
     # "func_80004E40",
@@ -73,7 +74,7 @@ ignored = [
     "func_8000F660",   # osViSetSpecialFeatures
     "func_8000F1A4",   # osViGetCurrentFramebuffer
     # PI
-    "func_80004820",   # osPiStartDma wrapper (used by LZSS and DMA code)
+    "func_80004820",   # osPiStartDma wrapper — custom impl in os_redirects.cpp
     "func_8000E7A4",   # osPiStartDma
     "func_8000EA20",   # osEPiStartDma
     "func_8000EC50",   # osCreatePiManager

@@ -168,7 +168,16 @@ extern "C" void func_80005470(uint8_t* rdram, recomp_context* ctx) {
     uint32_t mq = (uint32_t)ctx->r4;
     uint32_t msg = (uint32_t)ctx->r5;
     uint32_t flag = (uint32_t)ctx->r6;
-    fprintf(stderr, "[OS] osSendMesg(mq=0x%08X, msg=0x%08X, flag=%d)\n", mq, msg, flag);
+    if (g_os_call_count < 500) { g_os_call_count++; fprintf(stderr, "[OS] osSendMesg(mq=0x%08X, msg=0x%08X, flag=%d)\n", mq, msg, flag); }
+    osSendMesg_recomp(rdram, ctx);
+}
+
+// func_800050C0: internal osSendMesg used by the DMA system
+extern "C" void func_800050C0(uint8_t* rdram, recomp_context* ctx) {
+    uint32_t mq = (uint32_t)ctx->r4;
+    uint32_t msg = (uint32_t)ctx->r5;
+    uint32_t flag = (uint32_t)ctx->r6;
+    if (g_os_call_count < 500) { g_os_call_count++; fprintf(stderr, "[OS] osSendMesg_internal(mq=0x%08X, msg=0x%08X, flag=%d)\n", mq, msg, flag); }
     osSendMesg_recomp(rdram, ctx);
 }
 
@@ -255,7 +264,45 @@ REDIRECT(func_8000F660, osViSetSpecialFeatures_recomp) // osViSetSpecialFeatures
 REDIRECT(func_8000F1A4, osViGetCurrentFramebuffer_recomp) // osViGetCurrentFramebuffer
 
 // --- PI (Peripheral Interface / ROM) ---
-REDIRECT(func_80004820, osPiStartDma_recomp)      // osPiStartDma wrapper
+// func_80004820: osPiStartDma wrapper
+// N64 SDK signature: osPiStartDma(OSIoMesg *mb, s32 pri, s32 dir, u32 devAddr, void *vAddr, size_t nbytes, OSMesgQueue *mq)
+// Args: a0=mb, a1=pri, a2=dir, a3=devAddr, sp+0x10=vAddr, sp+0x14=nbytes, sp+0x18=mq
+// We implement it directly using recomp::do_rom_read and send completion message
+extern "C" void func_80004820(uint8_t* rdram, recomp_context* ctx) {
+    uint32_t mb = (uint32_t)ctx->r4;
+    uint32_t pri = (uint32_t)ctx->r5;
+    uint32_t dir = (uint32_t)ctx->r6;
+    uint32_t devAddr = (uint32_t)ctx->r7;
+    // Read stack args
+    gpr dramAddr = MEM_W(0x10, ctx->r29);
+    uint32_t nbytes = (uint32_t)MEM_W(0x14, ctx->r29);
+    uint32_t mq = (uint32_t)MEM_W(0x18, ctx->r29);
+
+    // devAddr is ROM offset — add rom_base for physical address
+    uint32_t physical_addr = devAddr + 0x10000000;
+
+    if (g_os_call_count < 200) {
+        g_os_call_count++;
+        fprintf(stderr, "[OS] osPiStartDma(dev=0x%08X, dram=0x%08X, size=0x%X, mq=0x%08X, dir=%d)\n",
+                devAddr, (uint32_t)dramAddr, nbytes, mq, dir);
+    }
+
+    if (dir == 0) {
+        // Read from ROM to RDRAM
+        recomp::do_rom_read(rdram, dramAddr, physical_addr, nbytes);
+    }
+
+    // Send completion message to the message queue
+    if (mq != 0) {
+        ctx->r4 = (uint64_t)(int64_t)(int32_t)mq;
+        ctx->r5 = 0; // msg = NULL
+        ctx->r6 = 0; // flag = OS_MESG_NOBLOCK
+        osSendMesg_recomp(rdram, ctx);
+    }
+
+    ctx->r2 = 0; // return success
+}
+
 REDIRECT(func_8000E7A4, osPiStartDma_recomp)      // osPiStartDma
 REDIRECT(func_8000EA20, osEPiStartDma_recomp)      // osEPiStartDma
 REDIRECT(func_8000EC50, osCreatePiManager_recomp)  // osCreatePiManager

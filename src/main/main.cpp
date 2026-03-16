@@ -247,6 +247,23 @@ void on_game_init(uint8_t* rdram, recomp_context* ctx) {
         fprintf(stderr, "[SFRush]   Set osMemSize at 0x80000318 = 0x800000 (8 MB)\n");
     }
 
+    // Initialize PI handle global at 0x80019D90
+    // The recompiled osPiStartDma wrapper (func_80004820) checks this
+    // and returns -1 if null. Set it to a non-zero value so DMA proceeds.
+    // Point it to a scratch area with a valid handle structure.
+    {
+        uint32_t handle_addr = 0x80057000; // scratch in BSS
+        uint32_t handle_offset = handle_addr - 0x80000000;
+        // Write a minimal OSPiHandle struct
+        // baseAddress at offset 0x2C should be the ROM base (0xB0000000)
+        *(uint32_t*)(rdram + handle_offset + 0x00) = 0; // next
+        *(uint32_t*)(rdram + handle_offset + 0x04) = 0; // type
+        *(uint32_t*)(rdram + handle_offset + 0x2C) = 0xB0000000; // baseAddress
+        // Store handle pointer to global at 0x80019D90
+        *(uint32_t*)(rdram + (0x80019D90 - 0x80000000)) = handle_addr;
+        fprintf(stderr, "[SFRush]   Set PI handle at 0x80019D90 -> 0x%08X\n", handle_addr);
+    }
+
     fprintf(stderr, "[SFRush] on_game_init complete.\n");
 }
 
