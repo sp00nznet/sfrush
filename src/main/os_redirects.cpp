@@ -432,7 +432,7 @@ REDIRECT(func_80003A10, __osSetFpcCsr_recomp)       // __osSetFpcCsr
 REDIRECT(func_800053B0, osSetTimer_recomp)          // osSetTimer
 REDIRECT(func_80005030, osGetTime_recomp)           // osGetTime
 
-// func_80007C50 (heap allocator) runs natively
+// func_80007C50 (heap allocator) and func_80003B18 (LZSS) run natively
 
 // --- TLB ---
 REDIRECT(func_8000E2D0, osUnmapTLBAll_recomp)      // TLB probe/unmap
