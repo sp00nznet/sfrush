@@ -24,10 +24,10 @@ const LABELS = config.labels || {};
 const totalSec = parseInt(process.argv[3]) || 20;
 const intervalSec = parseInt(process.argv[4]) || 10;
 
-const M64P = path.join(__dirname, 'Release', 'mupen64plus-ui-console.exe');
+const M64P = process.env.M64P_PATH || 'D:/diddy/mupen64plus/Release/mupen64plus-ui-console.exe';
 
 const proc = spawn(M64P, ['--emumode', EMUMODE, '--noosd', '--debug', ROM], {
-    cwd: path.join(__dirname, 'Release'),
+    cwd: path.dirname(M64P),
     stdio: ['pipe', 'pipe', 'pipe']
 });
 

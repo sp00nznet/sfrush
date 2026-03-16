@@ -1,0 +1,13 @@
+{
+    "rom": "D:\\sfrush\\baserom.z64",
+    "emumode": 1,
+    "state_reads": [
+        { "name": "alloc_table_0", "addr": "80161700", "size": 4 },
+        { "name": "alloc_table_1", "addr": "80161704", "size": 4 },
+        { "name": "alloc_table_2", "addr": "80161708", "size": 4 },
+        { "name": "alloc_table_3", "addr": "8016170C", "size": 4 },
+        { "name": "heap_cursor",   "addr": "800D9584", "size": 4 },
+        { "name": "game_flag",     "addr": "80021664", "size": 4 }
+    ],
+    "labels": {}
+}
