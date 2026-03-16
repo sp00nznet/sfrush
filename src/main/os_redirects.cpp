@@ -381,54 +381,6 @@ REDIRECT(func_80003A10, __osSetFpcCsr_recomp)       // __osSetFpcCsr
 REDIRECT(func_800053B0, osSetTimer_recomp)          // osSetTimer
 REDIRECT(func_80005030, osGetTime_recomp)           // osGetTime
 
-// --- Heap allocator debug ---
-extern "C" void func_80007C50(uint8_t* rdram, recomp_context* ctx) {
-    static int alloc_count = 0;
-    alloc_count++;
-    uint32_t a2 = (uint32_t)ctx->r6;  // heap struct
-    uint32_t alloc_size = *(uint32_t*)(rdram + ((uint32_t)(ctx->r29 + 0x10) - 0x80000000));
-
-    if (alloc_count <= 10) {
-        uint32_t heap_off = (a2 & 0x7FFFFF);
-        uint32_t h0 = *(uint32_t*)(rdram + heap_off + 0);
-        uint32_t h4 = *(uint32_t*)(rdram + heap_off + 4);
-        uint32_t h8 = *(uint32_t*)(rdram + heap_off + 8);
-        fprintf(stderr, "[HEAP#%d] size=0x%X heap=0x%08X [base=0x%08X, cur=0x%08X, total=0x%08X]\n",
-                alloc_count, alloc_size, a2, h0, h4, h8);
-    }
-
-    if (alloc_size > 0x100000) {
-        fprintf(stderr, "[HEAP#%d] GARBAGE SIZE 0x%X detected! Returning NULL.\n", alloc_count, alloc_size);
-        ctx->r2 = 0;
-        ctx->r3 = 0;
-        return;
-    }
-
-    // Simple bump allocator from the heap struct
-    uint32_t heap_off = (a2 & 0x7FFFFF);
-    uint32_t base = *(uint32_t*)(rdram + heap_off + 0);
-    uint32_t cur = *(uint32_t*)(rdram + heap_off + 4);
-    uint32_t total = *(uint32_t*)(rdram + heap_off + 8);
-    uint32_t end = base + total;
-
-    uint32_t aligned = (cur + 0xF) & ~0xF;
-    if (aligned + alloc_size > end) {
-        fprintf(stderr, "[HEAP#%d] NO SPACE (need 0x%X, have 0x%X)\n", alloc_count, alloc_size, end - aligned);
-        ctx->r2 = 0;
-        ctx->r3 = 0;
-        return;
-    }
-
-    // Update cursor
-    *(uint32_t*)(rdram + heap_off + 4) = aligned + alloc_size;
-    ctx->r2 = (uint64_t)(int64_t)(int32_t)aligned;
-    ctx->r3 = (uint64_t)(int64_t)(int32_t)aligned; // r3 = r2 in some cases
-
-    if (alloc_count <= 10) {
-        fprintf(stderr, "[HEAP#%d] -> 0x%08X\n", alloc_count, aligned);
-    }
-}
-
 // --- TLB ---
 REDIRECT(func_8000E2D0, osUnmapTLBAll_recomp)      // TLB probe/unmap
 REDIRECT(func_80015860, osUnmapTLBAll_recomp)       // TLB read/write
